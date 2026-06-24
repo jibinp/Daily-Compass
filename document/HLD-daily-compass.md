@@ -1,4 +1,4 @@
-# Daily Compass — Design Specification
+# Daily Compass — High-Level Design (HLD)
 
 **Date:** 2026-06-24
 **Status:** Approved (high-level)
