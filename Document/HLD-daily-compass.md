@@ -32,6 +32,10 @@ personal laptop, company laptop, phone — and always shows the same data.
 
 Two layers with a clean boundary between them.
 
+### System Block Diagram
+
+![Daily Compass system block diagram](block-diagram.png)
+
 ```
 Frontend (web app)  ──HTTPS + Supabase SDK──►  Backend
    GitHub Pages                                  Supabase
