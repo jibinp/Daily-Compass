@@ -121,7 +121,57 @@ aspects and fields refined in a later phase; not blocking v1).
 - **Native apps:** Supabase already provides iOS/Android/Flutter SDKs, so native
   store apps can reuse the same backend and data.
 
-## 8. Cost
+## 8. Reminders & Scheduling (Later Phase)
+
+The system can trigger reminders and run tasks on a schedule without the owner
+operating any server. Scheduling uses managed ("serverless") compute that the
+provider runs on a timer and shuts down again — no VPS, no uptime to maintain.
+
+### Reminder types
+
+- **On-page reminder** (app open): pure client-side JavaScript. Already part of
+  v1.
+- **Push reminder** (app closed / phone idle): needs a scheduler plus a delivery
+  channel. This is the later-phase work described here.
+
+### Scheduling engines (free)
+
+- **GitHub Actions cron:** a scheduled job in the repo runs a small script every
+  N minutes (minimum 5-minute interval; may lag a few minutes). The script
+  queries Supabase, decides, and sends reminders. Free quota: 2000 run-minutes /
+  month on private repos, unlimited on public repos. Typical personal use (a
+  ~30-second check every 15–30 minutes) stays well under the limit.
+- **Supabase scheduled jobs (pg_cron + Edge Functions):** Supabase runs SQL or a
+  serverless function on a schedule, close to the data. Included in the free
+  tier.
+
+### Delivery channels (free)
+
+| Channel                     | Notes                                  |
+|-----------------------------|----------------------------------------|
+| Email (e.g. Resend/SendGrid)| ~100/day free; simplest, reliable.     |
+| Web Push (browser notif)    | Free; requires the PWA service worker. |
+| Telegram bot                | Free, instant; easy for personal use.  |
+
+### Example flows
+
+- If no wakeup logged by 09:00, send a nudge.
+- A daily 22:00 "log sleep" reminder.
+- Periodic reminders during the eating window.
+
+### Data flow
+
+```
+GitHub Actions / Supabase cron ──fires on timer──► run script
+        │ reads Supabase, applies rule
+        ▼
+   send Email / Telegram / Web Push   (provider's managed compute, free)
+```
+
+The v1 static app stays static; only this scheduling piece borrows managed
+compute on a timer. Cost remains $0.
+
+## 9. Cost
 
 | Item                         | Cost        |
 |------------------------------|-------------|
@@ -138,7 +188,7 @@ Notes:
 - Optional paid extras, not required by this design: custom domain (~$10/yr,
   cosmetic) and native store fees (Apple $99/yr, Google $25 once).
 
-## 9. Open Questions (resolve at planning stage)
+## 10. Open Questions (resolve at planning stage)
 
 - Frontend tech: plain HTML/CSS/JS or a light framework.
 - Aspects: fixed list defined up front vs. freely added.
