@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-24
 **Status:** Approved (high-level)
-**Owner:** general@riodlogic.com
+**Owner:** jp
 
 ## 1. Purpose
 
