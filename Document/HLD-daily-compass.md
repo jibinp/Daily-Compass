@@ -171,7 +171,31 @@ GitHub Actions / Supabase cron ──fires on timer──► run script
 The v1 static app stays static; only this scheduling piece borrows managed
 compute on a timer. Cost remains $0.
 
-## 9. Cost
+## 9. Portability & Migration
+
+The design avoids vendor lock-in so the app can move to AWS or another provider
+later with low effort.
+
+- **Standard database.** Supabase stores data in plain **Postgres**. Postgres is
+  an open standard, so the data exports from Supabase and imports into any other
+  Postgres host (e.g. AWS RDS) with a dump/restore — essentially a copy. Postgres
+  was chosen over a proprietary store (e.g. Firebase) specifically for this.
+- **Single data-access layer.** All database and auth calls go through **one
+  module** in the frontend, not scattered across the app:
+
+  ```
+  app code  →  data-access module  →  Supabase SDK
+  ```
+
+  To switch backend later, only this one module is rewritten; the rest of the app
+  is untouched. This turns a potential multi-week rip-out into roughly a weekend.
+- **Static app.** The frontend is plain static files, movable to any host (S3,
+  etc.) in minutes.
+
+This is a v1 design rule (the data-access module), not deferred work — adopting
+it up front is what keeps migration cheap.
+
+## 10. Cost
 
 | Item                         | Cost        |
 |------------------------------|-------------|
@@ -188,7 +212,7 @@ Notes:
 - Optional paid extras, not required by this design: custom domain (~$10/yr,
   cosmetic) and native store fees (Apple $99/yr, Google $25 once).
 
-## 10. Open Questions (resolve at planning stage)
+## 11. Open Questions (resolve at planning stage)
 
 - Frontend tech: plain HTML/CSS/JS or a light framework.
 - Aspects: fixed list defined up front vs. freely added.
