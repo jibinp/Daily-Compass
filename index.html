@@ -57,7 +57,8 @@
       gap: 8px;
       align-items: stretch;
     }
-    input[type="datetime-local"], input[type="email"] {
+    input[type="datetime-local"], input[type="email"],
+    input[type="time"], input[type="date"] {
       flex: 1;
       width: 100%;
       background: var(--field);
@@ -111,6 +112,48 @@
     .list li:last-child { border-bottom: none; }
     .list .when { color: var(--muted); }
     h2 { font-size: 1rem; margin: 24px 0 8px; }
+    .overlay {
+      position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6);
+      display: flex; align-items: center; justify-content: center;
+      padding: 24px; z-index: 100;
+    }
+    .modal {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 14px; padding: 20px; width: 100%; max-width: 360px;
+    }
+    .modal-title { font-weight: 700; margin-bottom: 10px; }
+    .modal-body { color: var(--text); font-size: 0.9rem; white-space: pre-line; margin-bottom: 18px; }
+    .modal-actions { display: flex; gap: 8px; }
+    .modal-actions button { flex: 1; }
+    .btn-danger {
+      background: var(--err); color: #2a0505; border: none;
+      border-radius: 10px; padding: 12px; font-weight: 700; cursor: pointer;
+    }
+    .btn-cancel {
+      background: var(--field); color: var(--text); border: 1px solid var(--border);
+      border-radius: 10px; padding: 12px; font-weight: 600; cursor: pointer;
+    }
+    .btn-row { display: flex; gap: 8px; margin: 8px 0 4px; }
+    .btn-alt {
+      flex: 1; background: var(--card); color: var(--text);
+      border: 1px solid var(--border); border-radius: 10px;
+      padding: 12px; font-weight: 600; font-size: 0.9rem;
+      cursor: pointer; text-align: center; text-decoration: none;
+      display: inline-block;
+    }
+    .btn-alt:active { background: var(--field); transform: scale(0.98); }
+    .table-wrap { overflow-x: auto; margin-top: 8px; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    th { color: var(--muted); font-weight: 600; }
+    .del-btn {
+      background: none; border: none; color: var(--err);
+      cursor: pointer; font-size: 1rem; padding: 0 4px; line-height: 1;
+    }
+    .del-btn:active { transform: scale(0.9); }
+    tr.dup td, td.dupcell { background: rgba(248, 113, 113, 0.14); }
+    .dup-note { color: var(--err); font-size: 0.85rem; margin: 6px 0; }
+    .warn { color: var(--err); }
   </style>
 </head>
 <body>
@@ -142,11 +185,20 @@
         <button class="link-btn" id="logoutBtn">Log out</button>
       </div>
 
+      <!-- Log day for this entry (required). All times below go under this date. -->
+      <div class="field">
+        <div class="field-head"><span class="icon">📅</span><span class="label">Log date</span></div>
+        <div class="row">
+          <input type="date" id="logDate" />
+          <button class="now-btn" id="todayBtn">Today</button>
+        </div>
+      </div>
+
       <!-- Sequence: wakeup → eat start → eat end → sleep -->
       <div class="field">
         <div class="field-head"><span class="icon">☀️</span><span class="label">Wakeup</span></div>
         <div class="row">
-          <input type="datetime-local" id="wakeup" />
+          <input type="time" id="wakeup" />
           <button class="now-btn" data-target="wakeup">Now</button>
         </div>
       </div>
@@ -154,7 +206,7 @@
       <div class="field">
         <div class="field-head"><span class="icon">🍽️</span><span class="label">Eating window — start</span></div>
         <div class="row">
-          <input type="datetime-local" id="eat_start" />
+          <input type="time" id="eat_start" />
           <button class="now-btn" data-target="eat_start">Now</button>
         </div>
       </div>
@@ -162,7 +214,7 @@
       <div class="field">
         <div class="field-head"><span class="icon">🏁</span><span class="label">Eating window — end</span></div>
         <div class="row">
-          <input type="datetime-local" id="eat_end" />
+          <input type="time" id="eat_end" />
           <button class="now-btn" data-target="eat_end">Now</button>
         </div>
       </div>
@@ -170,13 +222,31 @@
       <div class="field">
         <div class="field-head"><span class="icon">🌙</span><span class="label">Sleep</span></div>
         <div class="row">
-          <input type="datetime-local" id="sleep" />
+          <input type="time" id="sleep" />
           <button class="now-btn" data-target="sleep">Now</button>
         </div>
       </div>
 
-      <button class="btn btn-wide" id="saveBtn">Save today</button>
+      <button class="btn btn-wide" id="saveBtn">Save</button>
       <div class="msg" id="saveMsg"></div>
+
+      <div class="btn-row">
+        <button class="btn-alt" id="viewDataBtn">View all data</button>
+        <a class="btn-alt" id="supabaseLink" target="_blank" rel="noopener">Open in Supabase</a>
+      </div>
+
+      <div id="dataView" class="hidden">
+        <h2>All data</h2>
+        <div class="dup-note hidden" id="dupNote"></div>
+        <div class="table-wrap">
+          <table id="dataTable">
+            <thead>
+              <tr><th>Date</th><th>Wakeup</th><th>Eat start</th><th>Eat end</th><th>Sleep</th></tr>
+            </thead>
+            <tbody id="dataBody"></tbody>
+          </table>
+        </div>
+      </div>
 
       <h2>Recent</h2>
       <ul class="list" id="recentList"></ul>
@@ -184,6 +254,18 @@
       <div class="note">
         Tap <strong>Now</strong> to fill a field with the current time, or pick a
         date &amp; time manually. Filled fields save when you tap <strong>Save today</strong>.
+      </div>
+    </div>
+  </div>
+
+  <!-- In-app confirm modal -->
+  <div id="overlay" class="overlay hidden">
+    <div class="modal">
+      <div class="modal-title" id="modalTitle">Confirm</div>
+      <div class="modal-body" id="modalBody"></div>
+      <div class="modal-actions">
+        <button class="btn-cancel" id="modalCancel">Cancel</button>
+        <button class="btn-danger" id="modalOk">Save anyway</button>
       </div>
     </div>
   </div>
@@ -219,10 +301,10 @@
       async signOut() {
         await supabase.auth.signOut();
       },
-      async addEvent({ aspect, title, datetime, notes }) {
+      async addEvent({ aspect, title, datetime, log_date, notes }) {
         const { error } = await supabase
           .from('events')
-          .insert({ aspect, title, datetime, notes: notes ?? null });
+          .insert({ aspect, title, datetime, log_date, notes: notes ?? null });
         if (error) throw error;
       },
       async recentEvents(limit = 15) {
@@ -234,7 +316,38 @@
         if (error) throw error;
         return data;
       },
+      async allEvents() {
+        const { data, error } = await supabase
+          .from('events')
+          .select('id, aspect, title, datetime, log_date')
+          .order('log_date', { ascending: false })
+          .order('datetime', { ascending: true });
+        if (error) throw error;
+        return data;
+      },
+      async deleteEvent(id) {
+        const { error } = await supabase.from('events').delete().eq('id', id);
+        if (error) throw error;
+      },
+      async updateEvent(id, fields) {
+        const { error } = await supabase.from('events').update(fields).eq('id', id);
+        if (error) throw error;
+      },
+      // id of an existing event of this aspect on this log day, else null
+      async findSameDay(aspect, logDate) {
+        const { data, error } = await supabase
+          .from('events')
+          .select('id')
+          .eq('aspect', aspect)
+          .eq('log_date', logDate)
+          .limit(1);
+        if (error) throw error;
+        return data.length ? data[0].id : null;
+      },
     };
+
+    // Supabase project ref — used for the "Open in Supabase" dashboard link.
+    const SUPABASE_REF = 'twpzcszcvylhaopcwqkv';
 
     // ================================================================
     // UI helpers
@@ -252,11 +365,17 @@
       const opts = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
       $('today').textContent = d.toLocaleDateString(undefined, opts);
     }
-    function localNow() {
+    const pad = n => String(n).padStart(2, '0');
+    function nowTime() {          // current HH:MM
       const d = new Date();
-      const pad = n => String(n).padStart(2, '0');
-      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-           + `T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+      return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+    function todayDate() {        // current YYYY-MM-DD
+      const d = new Date();
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    }
+    function localNow() {         // current full datetime-local value
+      return `${todayDate()}T${nowTime()}`;
     }
     function fmtWhen(iso) {
       return new Date(iso).toLocaleString(undefined,
@@ -265,6 +384,24 @@
     function msg(el, text, kind) {
       el.textContent = text;
       el.className = 'msg' + (kind ? ' ' + kind : '');
+    }
+
+    // In-app confirm dialog → resolves true (ok) / false (cancel).
+    function confirmModal(body, { title = 'Confirm', okText = 'Save anyway' } = {}) {
+      return new Promise(resolve => {
+        $('modalTitle').textContent = title;
+        $('modalBody').textContent = body;
+        $('modalOk').textContent = okText;
+        $('overlay').classList.remove('hidden');
+        const done = (val) => {
+          $('overlay').classList.add('hidden');
+          $('modalOk').onclick = null;
+          $('modalCancel').onclick = null;
+          resolve(val);
+        };
+        $('modalOk').onclick = () => done(true);
+        $('modalCancel').onclick = () => done(false);
+      });
     }
 
     // ================================================================
@@ -288,37 +425,154 @@
     // ================================================================
     // App view
     // ================================================================
-    document.querySelectorAll('.now-btn').forEach(btn => {
-      btn.addEventListener('click', () => { $(btn.dataset.target).value = localNow(); });
+    document.querySelectorAll('.now-btn[data-target]').forEach(btn => {
+      btn.addEventListener('click', () => { $(btn.dataset.target).value = nowTime(); });
     });
+    $('todayBtn').addEventListener('click', () => { $('logDate').value = todayDate(); });
 
     $('logoutBtn').addEventListener('click', async () => {
       await DB.signOut();
     });
 
     $('saveBtn').addEventListener('click', async () => {
+      const logDate = $('logDate').value;              // the log day (YYYY-MM-DD)
+      if (!logDate) { msg($('saveMsg'), 'Pick the log date at top.', 'err'); return; }
       const toSave = FIELDS
         .map(f => ({ ...f, value: $(f.id).value }))
         .filter(f => f.value);
       if (!toSave.length) { msg($('saveMsg'), 'Fill at least one field.', 'err'); return; }
 
       $('saveBtn').disabled = true;
-      msg($('saveMsg'), 'Saving…', '');
+      msg($('saveMsg'), 'Checking…', '');
       try {
+        // One entry per aspect per log day. Find existing rows to overwrite.
+        const plan = [];
         for (const f of toSave) {
-          await DB.addEvent({
-            aspect: f.id,
-            title: f.label,
-            datetime: new Date(f.value).toISOString(),
-          });
+          const existingId = await DB.findSameDay(f.id, logDate);
+          plan.push({ f, existingId });
         }
-        msg($('saveMsg'), `Saved ${toSave.length} entr${toSave.length === 1 ? 'y' : 'ies'}.`, 'ok');
+        const conflicts = plan.filter(p => p.existingId);
+        if (conflicts.length) {
+          const ok = await confirmModal(
+            'Already logged:\n' + conflicts.map(p => `${p.f.label} on ${logDate}`).join('\n')
+              + '\n\nSave anyway? This overwrites the existing entry.',
+            { title: 'Already logged', okText: 'Save anyway' });
+          if (!ok) {
+            msg($('saveMsg'), 'Cancelled.', '');
+            $('saveBtn').disabled = false;
+            return;
+          }
+        }
+
+        msg($('saveMsg'), 'Saving…', '');
+        for (const p of plan) {
+          const iso = new Date(`${logDate}T${p.f.value}`).toISOString();
+          if (p.existingId) {
+            await DB.updateEvent(p.existingId, { datetime: iso, title: p.f.label });
+          } else {
+            await DB.addEvent({ aspect: p.f.id, title: p.f.label, datetime: iso, log_date: logDate });
+          }
+        }
+        msg($('saveMsg'), `Saved ${plan.length} entr${plan.length === 1 ? 'y' : 'ies'}.`, 'ok');
         FIELDS.forEach(f => { $(f.id).value = ''; });
         await loadRecent();
+        if (!$('dataView').classList.contains('hidden')) await renderDataTable();
       } catch (e) {
         msg($('saveMsg'), e.message || 'Save failed.', 'err');
       } finally {
         $('saveBtn').disabled = false;
+      }
+    });
+
+    // "Open in Supabase" → Table Editor for the events table
+    $('supabaseLink').href =
+      `https://supabase.com/dashboard/project/${SUPABASE_REF}/editor`;
+
+    // One row per day; columns Date | Wakeup | Eat start | Eat end | Sleep.
+    const dayKey = iso => {
+      const d = new Date(iso);
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    };
+    const fmtTime = iso =>
+      new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+
+    async function renderDataTable() {
+      const rows = await DB.allEvents();
+      const body = $('dataBody');
+      body.innerHTML = '';
+      if (!rows.length) {
+        body.innerHTML = '<tr><td colspan="5">Nothing yet.</td></tr>';
+        $('dupNote').classList.add('hidden');
+        return;
+      }
+      // group by log day → { aspect: [rows] }
+      const days = {};
+      for (const r of rows) {
+        const k = r.log_date || dayKey(r.datetime);   // fallback for old rows
+        (days[k] = days[k] || {});
+        (days[k][r.aspect] = days[k][r.aspect] || []).push(r);
+      }
+      let dupCount = 0;
+      const cell = list => {
+        if (!list || !list.length) return '<td>—</td>';
+        const dup = list.length > 1;
+        if (dup) dupCount++;
+        const inner = list.map(r =>
+          `${fmtTime(r.datetime)} <button class="del-btn" data-id="${r.id}" title="Delete">✕</button>`
+        ).join('<br>');
+        return `<td class="${dup ? 'dupcell' : ''}">${dup ? '⚠ ' : ''}${inner}</td>`;
+      };
+      for (const k of Object.keys(days).sort().reverse()) {
+        const d = days[k];
+        const dateLabel = new Date(`${k}T00:00`)
+          .toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${dateLabel}</td>` + FIELDS.map(f => cell(d[f.id])).join('');
+        body.appendChild(tr);
+      }
+      const note = $('dupNote');
+      if (dupCount) {
+        note.textContent = '⚠ Some days have more than one of the same entry. Remove extras with ✕.';
+        note.classList.remove('hidden');
+      } else {
+        note.classList.add('hidden');
+      }
+    }
+
+    // "View all data" → toggle
+    $('viewDataBtn').addEventListener('click', async () => {
+      const view = $('dataView');
+      if (!view.classList.contains('hidden')) {
+        view.classList.add('hidden');
+        $('viewDataBtn').textContent = 'View all data';
+        return;
+      }
+      $('viewDataBtn').textContent = 'Loading…';
+      try {
+        await renderDataTable();
+        view.classList.remove('hidden');
+        $('viewDataBtn').textContent = 'Hide data';
+      } catch (e) {
+        $('viewDataBtn').textContent = 'View all data';
+        msg($('saveMsg'), 'Load failed: ' + e.message, 'err');
+      }
+    });
+
+    // Delete a cell entry (event delegation on the table body)
+    $('dataBody').addEventListener('click', async (e) => {
+      const btn = e.target.closest('.del-btn');
+      if (!btn) return;
+      const ok = await confirmModal('Delete this entry? Cannot undo.',
+        { title: 'Delete', okText: 'Delete' });
+      if (!ok) return;
+      btn.disabled = true;
+      try {
+        await DB.deleteEvent(btn.dataset.id);
+        await renderDataTable();
+        await loadRecent();
+      } catch (err) {
+        btn.disabled = false;
+        msg($('saveMsg'), 'Delete failed: ' + err.message, 'err');
       }
     });
 
@@ -352,6 +606,7 @@
       $('loginView').classList.add('hidden');
       $('appView').classList.remove('hidden');
       $('whoami').textContent = session.user.email;
+      if (!$('logDate').value) $('logDate').value = todayDate();
       await loadRecent();
     }
 
