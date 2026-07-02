@@ -3,19 +3,15 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Daily Compass — Log</title>
+  <title>Daily Compass</title>
   <style>
     :root {
       --bg: #0f172a;
       --card: #1e293b;
-      --field: #0f172a;
       --border: #334155;
       --text: #e2e8f0;
       --muted: #94a3b8;
       --accent: #38bdf8;
-      --accent-press: #0ea5e9;
-      --ok: #22c55e;
-      --err: #f87171;
     }
     * { box-sizing: border-box; }
     body {
@@ -25,597 +21,99 @@
       color: var(--text);
       min-height: 100vh;
       display: flex;
-      justify-content: center;
-      padding: 24px 16px 48px;
-    }
-    .wrap { width: 100%; max-width: 440px; }
-    header { text-align: center; margin-bottom: 8px; }
-    h1 { font-size: 1.4rem; margin: 0; }
-    .date-line {
-      color: var(--muted);
-      font-size: 0.9rem;
-      text-align: center;
-      margin-bottom: 24px;
-    }
-    .field {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      padding: 16px;
-      margin-bottom: 14px;
-    }
-    .field-head {
-      display: flex;
+      flex-direction: column;
       align-items: center;
-      gap: 10px;
-      margin-bottom: 12px;
+      padding-bottom: 48px;
     }
-    .icon { font-size: 1.3rem; }
-    .label { font-weight: 600; font-size: 1.05rem; }
-    .row {
-      display: flex;
-      gap: 8px;
-      align-items: stretch;
+    .wrap { width: 100%; max-width: 440px; padding: 32px 16px 0; }
+    header { text-align: center; margin-bottom: 6px; }
+    h1 { font-size: 1.6rem; margin: 0; }
+    .date-line {
+      color: var(--muted); font-size: 0.9rem; text-align: center; margin-bottom: 28px;
     }
-    input[type="datetime-local"], input[type="email"],
-    input[type="time"], input[type="date"] {
-      flex: 1;
-      width: 100%;
-      background: var(--field);
-      border: 1px solid var(--border);
-      color: var(--text);
-      border-radius: 10px;
-      padding: 10px 12px;
-      font-size: 0.95rem;
-      color-scheme: dark;
+    .apps { display: grid; gap: 14px; }
+    .app-tile {
+      display: flex; align-items: center; gap: 14px;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 14px; padding: 18px 16px;
+      color: var(--text); text-decoration: none;
+      transition: border-color 0.15s, transform 0.05s;
     }
-    input:focus { outline: none; border-color: var(--accent); }
-    .now-btn, .btn {
-      background: var(--accent);
-      color: #04283a;
-      border: none;
-      border-radius: 10px;
-      padding: 10px 16px;
-      font-weight: 700;
-      font-size: 0.9rem;
-      cursor: pointer;
-      white-space: nowrap;
+    .app-tile:hover { border-color: var(--accent); }
+    .app-tile:active { transform: scale(0.98); }
+    .app-tile.soon { opacity: 0.5; pointer-events: none; }
+    .app-icon { font-size: 1.8rem; }
+    .app-text { display: flex; flex-direction: column; }
+    .app-name { font-weight: 600; font-size: 1.05rem; }
+    .app-desc { color: var(--muted); font-size: 0.85rem; }
+    .soon-tag {
+      margin-left: auto; font-size: 0.7rem; color: var(--muted);
+      border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px;
     }
-    .now-btn:active, .btn:active { background: var(--accent-press); transform: scale(0.97); }
-    .btn-wide { width: 100%; padding: 14px; font-size: 1rem; margin-top: 4px; }
-    .btn:disabled { opacity: 0.5; cursor: default; }
-    .note {
-      margin-top: 24px;
-      text-align: center;
-      color: var(--muted);
-      font-size: 0.8rem;
-      line-height: 1.5;
-    }
-    .msg { text-align: center; font-size: 0.9rem; margin: 12px 0; min-height: 1.2em; }
-    .msg.ok { color: var(--ok); }
-    .msg.err { color: var(--err); }
-    .hidden { display: none !important; }
     .topbar {
+      width: 100%;
       display: flex; justify-content: space-between; align-items: center;
-      font-size: 0.8rem; color: var(--muted); margin-bottom: 16px;
+      font-size: 0.85rem; color: var(--muted);
+      padding: 12px 20px; border-bottom: 1px solid var(--border);
     }
     .link-btn {
       background: none; border: none; color: var(--accent);
-      cursor: pointer; font-size: 0.8rem; padding: 0;
+      cursor: pointer; font-size: 0.8rem; padding: 0; text-decoration: none;
     }
-    .list { list-style: none; padding: 0; margin: 0; }
-    .list li {
-      display: flex; justify-content: space-between;
-      padding: 8px 0; border-bottom: 1px solid var(--border);
-      font-size: 0.9rem;
-    }
-    .list li:last-child { border-bottom: none; }
-    .list .when { color: var(--muted); }
-    h2 { font-size: 1rem; margin: 24px 0 8px; }
-    .overlay {
-      position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6);
-      display: flex; align-items: center; justify-content: center;
-      padding: 24px; z-index: 100;
-    }
-    .modal {
-      background: var(--card); border: 1px solid var(--border);
-      border-radius: 14px; padding: 20px; width: 100%; max-width: 360px;
-    }
-    .modal-title { font-weight: 700; margin-bottom: 10px; }
-    .modal-body { color: var(--text); font-size: 0.9rem; white-space: pre-line; margin-bottom: 18px; }
-    .modal-actions { display: flex; gap: 8px; }
-    .modal-actions button { flex: 1; }
-    .btn-danger {
-      background: var(--err); color: #2a0505; border: none;
-      border-radius: 10px; padding: 12px; font-weight: 700; cursor: pointer;
-    }
-    .btn-cancel {
-      background: var(--field); color: var(--text); border: 1px solid var(--border);
-      border-radius: 10px; padding: 12px; font-weight: 600; cursor: pointer;
-    }
-    .btn-row { display: flex; gap: 8px; margin: 8px 0 4px; }
-    .btn-alt {
-      flex: 1; background: var(--card); color: var(--text);
-      border: 1px solid var(--border); border-radius: 10px;
-      padding: 12px; font-weight: 600; font-size: 0.9rem;
-      cursor: pointer; text-align: center; text-decoration: none;
-      display: inline-block;
-    }
-    .btn-alt:active { background: var(--field); transform: scale(0.98); }
-    .table-wrap { overflow-x: auto; margin-top: 8px; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
-    th { color: var(--muted); font-weight: 600; }
-    .del-btn {
-      background: none; border: none; color: var(--err);
-      cursor: pointer; font-size: 1rem; padding: 0 4px; line-height: 1;
-    }
-    .del-btn:active { transform: scale(0.9); }
-    tr.dup td, td.dupcell { background: rgba(248, 113, 113, 0.14); }
-    .dup-note { color: var(--err); font-size: 0.85rem; margin: 6px 0; }
-    .warn { color: var(--err); }
   </style>
 </head>
 <body>
+  <div class="topbar">
+    <a class="link-btn" href="index.html">← Home</a>
+    <span id="whoami"></span>
+    <button class="link-btn" id="logoutBtn">Log out</button>
+  </div>
   <div class="wrap">
     <header>
-      <h1>Daily Compass</h1>
+      <h1>🧭 Daily Compass</h1>
     </header>
     <div class="date-line" id="today"></div>
 
-    <!-- ============ LOGIN VIEW ============ -->
-    <div id="loginView" class="hidden">
-      <div class="field">
-        <div class="field-head"><span class="icon">🔑</span><span class="label">Sign in</span></div>
-        <div class="row" style="flex-direction:column; gap:10px;">
-          <input type="email" id="email" placeholder="your@email.com" autocomplete="email" />
-          <button class="btn btn-wide" id="loginBtn">Send magic link</button>
-        </div>
-      </div>
-      <div class="msg" id="loginMsg"></div>
-      <div class="note">
-        Enter your email. We send a one-time link. Click it to log in — no password.
-      </div>
-    </div>
+    <div class="apps">
+      <a class="app-tile" href="health-log.html">
+        <span class="app-icon">🩺</span>
+        <span class="app-text">
+          <span class="app-name">Health Log</span>
+          <span class="app-desc">Wakeup, eating window, sleep</span>
+        </span>
+      </a>
 
-    <!-- ============ APP VIEW ============ -->
-    <div id="appView" class="hidden">
-      <div class="topbar">
-        <span id="whoami"></span>
-        <button class="link-btn" id="logoutBtn">Log out</button>
-      </div>
-
-      <!-- Log day for this entry (required). All times below go under this date. -->
-      <div class="field">
-        <div class="field-head"><span class="icon">📅</span><span class="label">Log date</span></div>
-        <div class="row">
-          <input type="date" id="logDate" />
-          <button class="now-btn" id="todayBtn">Today</button>
-        </div>
-      </div>
-
-      <!-- Sequence: wakeup → eat start → eat end → sleep -->
-      <div class="field">
-        <div class="field-head"><span class="icon">☀️</span><span class="label">Wakeup</span></div>
-        <div class="row">
-          <input type="time" id="wakeup" />
-          <button class="now-btn" data-target="wakeup">Now</button>
-        </div>
-      </div>
-
-      <div class="field">
-        <div class="field-head"><span class="icon">🍽️</span><span class="label">Eating window — start</span></div>
-        <div class="row">
-          <input type="time" id="eat_start" />
-          <button class="now-btn" data-target="eat_start">Now</button>
-        </div>
-      </div>
-
-      <div class="field">
-        <div class="field-head"><span class="icon">🏁</span><span class="label">Eating window — end</span></div>
-        <div class="row">
-          <input type="time" id="eat_end" />
-          <button class="now-btn" data-target="eat_end">Now</button>
-        </div>
-      </div>
-
-      <div class="field">
-        <div class="field-head"><span class="icon">🌙</span><span class="label">Sleep</span></div>
-        <div class="row">
-          <input type="time" id="sleep" />
-          <button class="now-btn" data-target="sleep">Now</button>
-        </div>
-      </div>
-
-      <button class="btn btn-wide" id="saveBtn">Save</button>
-      <div class="msg" id="saveMsg"></div>
-
-      <div class="btn-row">
-        <button class="btn-alt" id="viewDataBtn">View all data</button>
-        <a class="btn-alt" id="supabaseLink" target="_blank" rel="noopener">Open in Supabase</a>
-      </div>
-
-      <div id="dataView" class="hidden">
-        <h2>All data</h2>
-        <div class="dup-note hidden" id="dupNote"></div>
-        <div class="table-wrap">
-          <table id="dataTable">
-            <thead>
-              <tr><th>Date</th><th>Wakeup</th><th>Eat start</th><th>Eat end</th><th>Sleep</th></tr>
-            </thead>
-            <tbody id="dataBody"></tbody>
-          </table>
-        </div>
-      </div>
-
-      <h2>Recent</h2>
-      <ul class="list" id="recentList"></ul>
-
-      <div class="note">
-        Tap <strong>Now</strong> to fill a field with the current time, or pick a
-        date &amp; time manually. Filled fields save when you tap <strong>Save today</strong>.
-      </div>
-    </div>
-  </div>
-
-  <!-- In-app confirm modal -->
-  <div id="overlay" class="overlay hidden">
-    <div class="modal">
-      <div class="modal-title" id="modalTitle">Confirm</div>
-      <div class="modal-body" id="modalBody"></div>
-      <div class="modal-actions">
-        <button class="btn-cancel" id="modalCancel">Cancel</button>
-        <button class="btn-danger" id="modalOk">Save anyway</button>
-      </div>
+      <!-- Future apps: drop a tile here + create its .html file -->
+      <a class="app-tile soon" href="#">
+        <span class="app-icon">📊</span>
+        <span class="app-text">
+          <span class="app-name">Stats</span>
+          <span class="app-desc">Trends across aspects</span>
+        </span>
+        <span class="soon-tag">Soon</span>
+      </a>
     </div>
   </div>
 
   <script type="module">
     import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-
-    // ---- config (safe to expose: anon/publishable key + RLS protect data) ----
     const SUPABASE_URL = 'https://twpzcszcvylhaopcwqkv.supabase.co';
     const SUPABASE_KEY = 'sb_publishable_c1BhUlrZPf2YsXW_5LdrZw_-wYh4lJM';
-
     const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-    // ================================================================
-    // DB — single data-access module (HLD §9). All DB/auth calls here.
-    // Swap this one module to change backend later.
-    // ================================================================
-    const DB = {
-      onAuthChange(cb) {
-        supabase.auth.onAuthStateChange((_e, session) => cb(session));
-      },
-      async currentSession() {
-        const { data } = await supabase.auth.getSession();
-        return data.session;
-      },
-      async sendMagicLink(email) {
-        const { error } = await supabase.auth.signInWithOtp({
-          email,
-          options: { emailRedirectTo: window.location.href.split('#')[0] },
-        });
-        if (error) throw error;
-      },
-      async signOut() {
-        await supabase.auth.signOut();
-      },
-      async addEvent({ aspect, title, datetime, log_date, notes }) {
-        const { error } = await supabase
-          .from('events')
-          .insert({ aspect, title, datetime, log_date, notes: notes ?? null });
-        if (error) throw error;
-      },
-      async recentEvents(limit = 15) {
-        const { data, error } = await supabase
-          .from('events')
-          .select('aspect, title, datetime')
-          .order('datetime', { ascending: false })
-          .limit(limit);
-        if (error) throw error;
-        return data;
-      },
-      async allEvents() {
-        const { data, error } = await supabase
-          .from('events')
-          .select('id, aspect, title, datetime, log_date')
-          .order('log_date', { ascending: false })
-          .order('datetime', { ascending: true });
-        if (error) throw error;
-        return data;
-      },
-      async deleteEvent(id) {
-        const { error } = await supabase.from('events').delete().eq('id', id);
-        if (error) throw error;
-      },
-      async updateEvent(id, fields) {
-        const { error } = await supabase.from('events').update(fields).eq('id', id);
-        if (error) throw error;
-      },
-      // id of an existing event of this aspect on this log day, else null
-      async findSameDay(aspect, logDate) {
-        const { data, error } = await supabase
-          .from('events')
-          .select('id')
-          .eq('aspect', aspect)
-          .eq('log_date', logDate)
-          .limit(1);
-        if (error) throw error;
-        return data.length ? data[0].id : null;
-      },
-    };
-
-    // Supabase project ref — used for the "Open in Supabase" dashboard link.
-    const SUPABASE_REF = 'twpzcszcvylhaopcwqkv';
-
-    // ================================================================
-    // UI helpers
-    // ================================================================
     const $ = id => document.getElementById(id);
-    const FIELDS = [
-      { id: 'wakeup',    label: 'Wakeup' },
-      { id: 'eat_start', label: 'Eating start' },
-      { id: 'eat_end',   label: 'Eating end' },
-      { id: 'sleep',     label: 'Sleep' },
-    ];
 
-    function fmtToday() {
-      const d = new Date();
-      const opts = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
-      $('today').textContent = d.toLocaleDateString(undefined, opts);
-    }
-    const pad = n => String(n).padStart(2, '0');
-    function nowTime() {          // current HH:MM
-      const d = new Date();
-      return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-    }
-    function todayDate() {        // current YYYY-MM-DD
-      const d = new Date();
-      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-    }
-    function localNow() {         // current full datetime-local value
-      return `${todayDate()}T${nowTime()}`;
-    }
-    function fmtWhen(iso) {
-      return new Date(iso).toLocaleString(undefined,
-        { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-    }
-    function msg(el, text, kind) {
-      el.textContent = text;
-      el.className = 'msg' + (kind ? ' ' + kind : '');
-    }
+    $('today').textContent = new Date().toLocaleDateString(undefined,
+      { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
-    // In-app confirm dialog → resolves true (ok) / false (cancel).
-    function confirmModal(body, { title = 'Confirm', okText = 'Save anyway' } = {}) {
-      return new Promise(resolve => {
-        $('modalTitle').textContent = title;
-        $('modalBody').textContent = body;
-        $('modalOk').textContent = okText;
-        $('overlay').classList.remove('hidden');
-        const done = (val) => {
-          $('overlay').classList.add('hidden');
-          $('modalOk').onclick = null;
-          $('modalCancel').onclick = null;
-          resolve(val);
-        };
-        $('modalOk').onclick = () => done(true);
-        $('modalCancel').onclick = () => done(false);
-      });
-    }
-
-    // ================================================================
-    // Login view
-    // ================================================================
-    $('loginBtn').addEventListener('click', async () => {
-      const email = $('email').value.trim();
-      if (!email) { msg($('loginMsg'), 'Enter your email.', 'err'); return; }
-      $('loginBtn').disabled = true;
-      msg($('loginMsg'), 'Sending…', '');
-      try {
-        await DB.sendMagicLink(email);
-        msg($('loginMsg'), 'Link sent. Check your email, then click it.', 'ok');
-      } catch (e) {
-        msg($('loginMsg'), e.message || 'Failed to send link.', 'err');
-      } finally {
-        $('loginBtn').disabled = false;
-      }
+    // Shared session: show email + logout across all apps (same Supabase project)
+    supabase.auth.getSession().then(({ data }) => {
+      $('whoami').textContent = data.session ? data.session.user.email : '';
     });
-
-    // ================================================================
-    // App view
-    // ================================================================
-    document.querySelectorAll('.now-btn[data-target]').forEach(btn => {
-      btn.addEventListener('click', () => { $(btn.dataset.target).value = nowTime(); });
-    });
-    $('todayBtn').addEventListener('click', () => { $('logDate').value = todayDate(); });
-
     $('logoutBtn').addEventListener('click', async () => {
-      await DB.signOut();
+      await supabase.auth.signOut();
+      $('whoami').textContent = '';
     });
-
-    $('saveBtn').addEventListener('click', async () => {
-      const logDate = $('logDate').value;              // the log day (YYYY-MM-DD)
-      if (!logDate) { msg($('saveMsg'), 'Pick the log date at top.', 'err'); return; }
-      const toSave = FIELDS
-        .map(f => ({ ...f, value: $(f.id).value }))
-        .filter(f => f.value);
-      if (!toSave.length) { msg($('saveMsg'), 'Fill at least one field.', 'err'); return; }
-
-      $('saveBtn').disabled = true;
-      msg($('saveMsg'), 'Checking…', '');
-      try {
-        // One entry per aspect per log day. Find existing rows to overwrite.
-        const plan = [];
-        for (const f of toSave) {
-          const existingId = await DB.findSameDay(f.id, logDate);
-          plan.push({ f, existingId });
-        }
-        const conflicts = plan.filter(p => p.existingId);
-        if (conflicts.length) {
-          const ok = await confirmModal(
-            'Already logged:\n' + conflicts.map(p => `${p.f.label} on ${logDate}`).join('\n')
-              + '\n\nSave anyway? This overwrites the existing entry.',
-            { title: 'Already logged', okText: 'Save anyway' });
-          if (!ok) {
-            msg($('saveMsg'), 'Cancelled.', '');
-            $('saveBtn').disabled = false;
-            return;
-          }
-        }
-
-        msg($('saveMsg'), 'Saving…', '');
-        for (const p of plan) {
-          const iso = new Date(`${logDate}T${p.f.value}`).toISOString();
-          if (p.existingId) {
-            await DB.updateEvent(p.existingId, { datetime: iso, title: p.f.label });
-          } else {
-            await DB.addEvent({ aspect: p.f.id, title: p.f.label, datetime: iso, log_date: logDate });
-          }
-        }
-        msg($('saveMsg'), `Saved ${plan.length} entr${plan.length === 1 ? 'y' : 'ies'}.`, 'ok');
-        FIELDS.forEach(f => { $(f.id).value = ''; });
-        await loadRecent();
-        if (!$('dataView').classList.contains('hidden')) await renderDataTable();
-      } catch (e) {
-        msg($('saveMsg'), e.message || 'Save failed.', 'err');
-      } finally {
-        $('saveBtn').disabled = false;
-      }
-    });
-
-    // "Open in Supabase" → Table Editor for the events table
-    $('supabaseLink').href =
-      `https://supabase.com/dashboard/project/${SUPABASE_REF}/editor`;
-
-    // One row per day; columns Date | Wakeup | Eat start | Eat end | Sleep.
-    const dayKey = iso => {
-      const d = new Date(iso);
-      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-    };
-    const fmtTime = iso =>
-      new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-
-    async function renderDataTable() {
-      const rows = await DB.allEvents();
-      const body = $('dataBody');
-      body.innerHTML = '';
-      if (!rows.length) {
-        body.innerHTML = '<tr><td colspan="5">Nothing yet.</td></tr>';
-        $('dupNote').classList.add('hidden');
-        return;
-      }
-      // group by log day → { aspect: [rows] }
-      const days = {};
-      for (const r of rows) {
-        const k = r.log_date || dayKey(r.datetime);   // fallback for old rows
-        (days[k] = days[k] || {});
-        (days[k][r.aspect] = days[k][r.aspect] || []).push(r);
-      }
-      let dupCount = 0;
-      const cell = list => {
-        if (!list || !list.length) return '<td>—</td>';
-        const dup = list.length > 1;
-        if (dup) dupCount++;
-        const inner = list.map(r =>
-          `${fmtTime(r.datetime)} <button class="del-btn" data-id="${r.id}" title="Delete">✕</button>`
-        ).join('<br>');
-        return `<td class="${dup ? 'dupcell' : ''}">${dup ? '⚠ ' : ''}${inner}</td>`;
-      };
-      for (const k of Object.keys(days).sort().reverse()) {
-        const d = days[k];
-        const dateLabel = new Date(`${k}T00:00`)
-          .toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${dateLabel}</td>` + FIELDS.map(f => cell(d[f.id])).join('');
-        body.appendChild(tr);
-      }
-      const note = $('dupNote');
-      if (dupCount) {
-        note.textContent = '⚠ Some days have more than one of the same entry. Remove extras with ✕.';
-        note.classList.remove('hidden');
-      } else {
-        note.classList.add('hidden');
-      }
-    }
-
-    // "View all data" → toggle
-    $('viewDataBtn').addEventListener('click', async () => {
-      const view = $('dataView');
-      if (!view.classList.contains('hidden')) {
-        view.classList.add('hidden');
-        $('viewDataBtn').textContent = 'View all data';
-        return;
-      }
-      $('viewDataBtn').textContent = 'Loading…';
-      try {
-        await renderDataTable();
-        view.classList.remove('hidden');
-        $('viewDataBtn').textContent = 'Hide data';
-      } catch (e) {
-        $('viewDataBtn').textContent = 'View all data';
-        msg($('saveMsg'), 'Load failed: ' + e.message, 'err');
-      }
-    });
-
-    // Delete a cell entry (event delegation on the table body)
-    $('dataBody').addEventListener('click', async (e) => {
-      const btn = e.target.closest('.del-btn');
-      if (!btn) return;
-      const ok = await confirmModal('Delete this entry? Cannot undo.',
-        { title: 'Delete', okText: 'Delete' });
-      if (!ok) return;
-      btn.disabled = true;
-      try {
-        await DB.deleteEvent(btn.dataset.id);
-        await renderDataTable();
-        await loadRecent();
-      } catch (err) {
-        btn.disabled = false;
-        msg($('saveMsg'), 'Delete failed: ' + err.message, 'err');
-      }
-    });
-
-    async function loadRecent() {
-      try {
-        const rows = await DB.recentEvents();
-        const ul = $('recentList');
-        ul.innerHTML = '';
-        if (!rows.length) {
-          ul.innerHTML = '<li><span class="muted">Nothing yet.</span></li>';
-          return;
-        }
-        for (const r of rows) {
-          const li = document.createElement('li');
-          li.innerHTML = `<span>${r.title}</span><span class="when">${fmtWhen(r.datetime)}</span>`;
-          ul.appendChild(li);
-        }
-      } catch (e) {
-        msg($('saveMsg'), 'Could not load recent: ' + e.message, 'err');
-      }
-    }
-
-    // ================================================================
-    // Route between login / app based on session
-    // ================================================================
-    function showLogin() {
-      $('loginView').classList.remove('hidden');
-      $('appView').classList.add('hidden');
-    }
-    async function showApp(session) {
-      $('loginView').classList.add('hidden');
-      $('appView').classList.remove('hidden');
-      $('whoami').textContent = session.user.email;
-      if (!$('logDate').value) $('logDate').value = todayDate();
-      await loadRecent();
-    }
-
-    fmtToday();
-    DB.onAuthChange(session => {
-      if (session) showApp(session); else showLogin();
-    });
-    // initial check (in case no auth event fires)
-    DB.currentSession().then(s => { if (s) showApp(s); else showLogin(); });
   </script>
 </body>
 </html>
