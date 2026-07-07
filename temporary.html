@@ -419,9 +419,14 @@
       crsMsg('Checking IRCC…', '');
       try {
         const res = await DB.crsRefresh();
-        crsMsg(res && res.pool_date ? `Updated: pool as of ${fmtDate(res.pool_date)}.`
-          : 'Checked. No newer data.', 'ok');
-        await loadCrs();
+        if (res && res.error) {                       // function ran but couldn't parse
+          crsMsg(res.error + (res.sawLabels ? ' Saw: ' + res.sawLabels.slice(0, 8).join(', ') : ''), 'err');
+        } else if (res && res.pool_date) {
+          crsMsg(`Updated: pool as of ${fmtDate(res.pool_date)} (${res.rows} bands).`, 'ok');
+          await loadCrs();
+        } else {
+          crsMsg('Checked — no data returned.', 'err');
+        }
       } catch (e) {
         crsMsg('Auto-check unavailable (deploy the crs-refresh function). Add manually below. ' +
           (e.message || ''), 'err');

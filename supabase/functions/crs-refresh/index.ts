@@ -41,7 +41,11 @@ Deno.serve(async (req) => {
 
     const parsed = parse(await res.text());
     if (!parsed) {
-      return json({ error: "Could not locate the distribution table (IRCC layout may have changed)." }, 422);
+      return json({ error: "Could not locate the distribution table (IRCC layout may have changed)." }, 200);
+    }
+    if (!parsed.distribution.length) {
+      // parsed the table but nothing matched our bands — return what we saw so it can be fixed
+      return json({ error: "Table found but no known CRS bands matched.", pool_date: parsed.pool_date, sawLabels: parsed.sawLabels }, 200);
     }
 
     const supabase = createClient(
@@ -96,19 +100,27 @@ function parse(html: string) {
   }
   if (!table) return null;
 
-  const distribution: { range: string; count: number }[] = [];
-  let total: number | null = null;
+  // Canonical bands the app expects. Top-level (for Total) + sub-bands.
+  const TOP = ["601-1200", "501-600", "451-500", "401-450", "351-400", "301-350", "0-300"];
+  const SUB = ["491-500", "481-490", "471-480", "461-470", "451-460",
+               "441-450", "431-440", "421-430", "411-420", "401-410"];
+  const KNOWN = new Set([...TOP, ...SUB]);
+  const norm = (s: string) => s.replace(/[‒-―−]/g, "-").replace(/\s+/g, "").trim(); // en/em dash → hyphen
+
+  const found = new Map<string, number>();
+  const sawLabels: string[] = [];
   for (const tr of [...table.querySelectorAll("tr")] as Element[]) {
     const cells = [...tr.querySelectorAll("th,td")].map((c) => (c.textContent ?? "").trim());
     if (cells.length < 2) continue;
-    const label = cells[0];
+    const label = norm(cells[0]);
     const count = parseInt(cells[cells.length - 1].replace(/[,\s]/g, ""), 10);
     if (Number.isNaN(count)) continue;
-    if (/^total\b/i.test(label)) { total = count; continue; }
-    distribution.push({ range: label, count });
+    sawLabels.push(cells[0]);
+    if (KNOWN.has(label)) found.set(label, count);
   }
-  if (!distribution.length) return null;
-  return { pool_date, distribution, total };
+  const distribution = [...TOP, ...SUB].filter((k) => found.has(k)).map((k) => ({ range: k, count: found.get(k)! }));
+  const total = TOP.filter((k) => found.has(k)).reduce((a, k) => a + found.get(k)!, 0) || null;
+  return { pool_date, distribution, total, sawLabels };
 }
 
 function toISODate(s: string): string | null {
