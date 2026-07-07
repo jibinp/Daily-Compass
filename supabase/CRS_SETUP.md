@@ -13,9 +13,10 @@ Run once, then reload the app:
 ```
 Open **SQL Editor**, paste the contents of [`crs_pool.sql`](./crs_pool.sql), Run.
 
-Now **Temporary → Canadian PR → Add snapshot** works: pick the "pool as of" date,
-paste IRCC's table (one row per line, `range` then `number`), Save. New date =
-new snapshot; the dropdown keeps history.
+Now **Temporary → Canadian PR → Add / update a date** works: pick the "pool as of"
+date, type the candidate count for each fixed IRCC range, Save. Ranges are constant;
+each date is a new column. The pivot table shows all dates side by side (Total is
+computed from the top-level bands).
 
 ## 2. Automatic weekly check (optional, deploy-later)
 

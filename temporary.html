@@ -143,6 +143,24 @@
     .crs-table th { color: var(--muted); font-weight: 600; }
     .crs-table td:last-child, .crs-table th:last-child { text-align: right; font-variant-numeric: tabular-nums; }
     .crs-table tr.total td { font-weight: 700; color: var(--accent); border-top: 1px solid var(--border); }
+    .crs-table tr.sub td:first-child { padding-left: 24px; color: var(--muted); font-size: 0.82rem; }
+    .crs-table td:first-child, .crs-table th:first-child {
+      position: sticky; left: 0; background: var(--card); text-align: left;
+    }
+    .crs-table th:not(:first-child), .crs-table td:not(:first-child) {
+      text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap;
+    }
+    .crs-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; margin: 4px 0; }
+    @media (max-width: 480px) { .crs-inputs { grid-template-columns: 1fr; } }
+    .crs-in { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .crs-in span { color: var(--text); font-size: 0.85rem; }
+    .crs-in.sub span { padding-left: 14px; color: var(--muted); font-size: 0.8rem; }
+    .crs-in input {
+      width: 46%; background: var(--field); border: 1px solid var(--border);
+      color: var(--text); border-radius: 8px; padding: 6px 8px;
+      font-size: 0.85rem; color-scheme: dark; text-align: right; font-variant-numeric: tabular-nums;
+    }
+    .crs-in input:focus { outline: none; border-color: var(--accent); }
     .crs-form { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
     .crs-form input[type="date"], .crs-form textarea {
       background: var(--field); border: 1px solid var(--border);
@@ -210,33 +228,25 @@
           <div class="muted-note">CRS score distribution of candidates in the Express Entry pool, as published by IRCC. Each snapshot is "pool as of" a date.</div>
 
           <div class="crs-toolbar">
-            <select id="crsDate" class="crs-date" aria-label="Snapshot date"></select>
             <button class="mini-btn" id="crsCheckNow" title="Fetch latest from IRCC (needs the deployed function)">Check now</button>
-            <button class="mini-btn ghost" id="crsAddToggle">＋ Add snapshot</button>
+            <button class="mini-btn ghost" id="crsAddToggle">＋ Add / update a date</button>
           </div>
           <div id="crsMsg" class="crs-msg"></div>
 
+          <!-- pivot: fixed ranges as rows, each pool date a column -->
           <div class="table-wrap">
-            <table class="crs-table">
-              <thead><tr><th>CRS score range</th><th>Candidates</th></tr></thead>
-              <tbody id="crsBody"></tbody>
-            </table>
+            <table class="crs-table" id="crsPivot"></table>
           </div>
           <div id="crsMeta" class="muted-note"></div>
 
-          <!-- manual add / paste snapshot -->
+          <!-- add / update the counts for one date -->
           <div id="crsForm" class="crs-form hidden">
             <label class="muted-note" for="crsFormDate">Pool as of</label>
             <input type="date" id="crsFormDate" />
-            <label class="muted-note" for="crsFormText">Paste the IRCC distribution — one row per line: range then number (commas ok). Include a "Total" row if present.</label>
-            <textarea id="crsFormText" rows="9" placeholder="601-1200    1,234
-501-600     45,678
-451-500     98,765
-...
-0-300       12,345
-Total       250,000"></textarea>
+            <div class="muted-note">Candidates per range (leave blank to skip). Total is computed.</div>
+            <div id="crsInputs" class="crs-inputs"></div>
             <div class="btn-row">
-              <button class="mini-btn" id="crsSave">Save snapshot</button>
+              <button class="mini-btn" id="crsSave">Save counts</button>
               <button class="mini-btn ghost" id="crsCancel">Cancel</button>
             </div>
           </div>
@@ -269,11 +279,11 @@ Total       250,000"></textarea>
         }, { onConflict: 'pool_date' });
         if (error) throw error;
       },
-      async crsDates() {
+      async crsAll() {
         const { data, error } = await supabase.from('crs_pool')
-          .select('pool_date').order('pool_date', { ascending: false });
+          .select('pool_date, distribution, total').order('pool_date', { ascending: true });
         if (error) throw error;
-        return data.map(r => r.pool_date);
+        return data;
       },
       async crsGet(pool_date) {
         const { data, error } = await supabase.from('crs_pool')
@@ -314,59 +324,77 @@ Total       250,000"></textarea>
     // ================================================================
     // CRS pool distribution
     // ================================================================
+    // Fixed IRCC CRS score ranges (sub = breakdown of the band above it).
+    // Total = sum of the top-level bands only (sub rows are already counted in them).
+    const RANGES = [
+      { r: '601-1200' },
+      { r: '501-600' },
+      { r: '451-500' },
+      { r: '491-500', sub: true },
+      { r: '481-490', sub: true },
+      { r: '471-480', sub: true },
+      { r: '461-470', sub: true },
+      { r: '451-460', sub: true },
+      { r: '401-450' },
+      { r: '441-450', sub: true },
+      { r: '431-440', sub: true },
+      { r: '421-430', sub: true },
+      { r: '411-420', sub: true },
+      { r: '401-410', sub: true },
+      { r: '351-400' },
+      { r: '301-350' },
+      { r: '0-300' },
+    ];
+    const SOURCE_URL =
+      'https://www.canada.ca/en/immigration-refugees-citizenship/services/immigrate-canada/express-entry/rounds-invitations.html';
+
     const crsMsg = (text, kind) => {
       const el = $('crsMsg'); el.textContent = text || '';
       el.className = 'crs-msg' + (kind ? ' ' + kind : '');
     };
-    const num = n => (n == null ? '—' : Number(n).toLocaleString());
+    const num = n => (n == null || n === '' ? '—' : Number(n).toLocaleString());
     const fmtDate = d => new Date(`${d}T00:00`).toLocaleDateString(undefined,
       { year: 'numeric', month: 'short', day: 'numeric' });
+    const fmtShort = d => new Date(`${d}T00:00`).toLocaleDateString(undefined,
+      { month: 'short', day: 'numeric' });
+    const distMap = dist => Object.fromEntries((dist || []).map(d => [d.range, d.count]));
+    const computeTotal = m => RANGES.filter(x => !x.sub)
+      .reduce((a, x) => a + (Number(m[x.r]) || 0), 0);
 
-    // Paste → [{range, count}] + total. One row per line: "<label> <number>".
-    function parseDistribution(text) {
-      const distribution = [];
-      let total = null;
-      for (const raw of text.split('\n')) {
-        const m = raw.trim().match(/^(.+?)[\s\t]+([\d,]+)$/);
-        if (!m) continue;
-        const label = m[1].trim();
-        const count = parseInt(m[2].replace(/,/g, ''), 10);
-        if (Number.isNaN(count)) continue;
-        if (/^total\b/i.test(label)) { total = count; continue; }
-        distribution.push({ range: label, count });
-      }
-      return { distribution, total };
-    }
-
-    function renderSnapshot(snap) {
-      const body = $('crsBody');
-      if (!snap || !snap.distribution || !snap.distribution.length) {
-        body.innerHTML = '<tr><td colspan="2">No snapshot yet. Use “Add snapshot”.</td></tr>';
+    // pivot: fixed ranges as rows, most-recent date first as columns
+    function renderPivot(rows) {
+      const t = $('crsPivot');
+      if (!rows.length) {
+        t.innerHTML = '<tbody><tr><td>No snapshots yet. Use “Add / update a date”.</td></tr></tbody>';
         $('crsMeta').textContent = '';
         return;
       }
-      body.innerHTML = snap.distribution
-        .map(r => `<tr><td>${r.range}</td><td>${num(r.count)}</td></tr>`).join('')
-        + (snap.total != null ? `<tr class="total"><td>Total</td><td>${num(snap.total)}</td></tr>` : '');
-      const fetched = snap.fetched_at ? new Date(snap.fetched_at).toLocaleString() : '';
+      const cols = rows.map(r => r.pool_date).reverse();      // recent first
+      const maps = {}; rows.forEach(r => { maps[r.pool_date] = distMap(r.distribution); });
+      const head = `<thead><tr><th>CRS score range</th>${
+        cols.map(d => `<th>${fmtShort(d)}</th>`).join('')}</tr></thead>`;
+      const body = RANGES.map(rg =>
+        `<tr class="${rg.sub ? 'sub' : ''}"><td>${rg.r}</td>${
+          cols.map(d => `<td>${num(maps[d][rg.r])}</td>`).join('')}</tr>`
+      ).join('');
+      const totalRow = `<tr class="total"><td>Total</td>${
+        cols.map(d => `<td>${num(computeTotal(maps[d]) || null)}</td>`).join('')}</tr>`;
+      t.innerHTML = head + '<tbody>' + body + totalRow + '</tbody>';
       $('crsMeta').innerHTML =
-        `Pool as of <strong>${fmtDate(snap.pool_date)}</strong>${fetched ? ' · saved ' + fetched : ''}`;
+        `Latest: pool as of <strong>${fmtDate(cols[0])}</strong> · ${cols.length} snapshot(s)`;
     }
 
-    async function loadCrs(selectDate) {
-      const sel = $('crsDate');
-      const dates = await DB.crsDates();
-      sel.innerHTML = dates.length
-        ? dates.map(d => `<option value="${d}">Pool as of ${fmtDate(d)}</option>`).join('')
-        : '<option value="">No snapshots</option>';
-      const pick = selectDate && dates.includes(selectDate) ? selectDate : dates[0];
-      if (pick) { sel.value = pick; renderSnapshot(await DB.crsGet(pick)); }
-      else renderSnapshot(null);
+    function buildInputs(dist) {
+      const m = distMap(dist);
+      $('crsInputs').innerHTML = RANGES.map(rg =>
+        `<label class="crs-in ${rg.sub ? 'sub' : ''}"><span>${rg.r}</span>` +
+        `<input type="number" inputmode="numeric" min="0" data-range="${rg.r}" value="${m[rg.r] ?? ''}" /></label>`
+      ).join('');
     }
 
-    $('crsDate').addEventListener('change', async () => {
-      if ($('crsDate').value) renderSnapshot(await DB.crsGet($('crsDate').value));
-    });
+    async function loadCrs() {
+      renderPivot(await DB.crsAll());
+    }
 
     $('crsCheckNow').addEventListener('click', async () => {
       $('crsCheckNow').disabled = true;
@@ -375,38 +403,44 @@ Total       250,000"></textarea>
         const res = await DB.crsRefresh();
         crsMsg(res && res.pool_date ? `Updated: pool as of ${fmtDate(res.pool_date)}.`
           : 'Checked. No newer data.', 'ok');
-        await loadCrs(res && res.pool_date);
+        await loadCrs();
       } catch (e) {
         crsMsg('Auto-check unavailable (deploy the crs-refresh function). Add manually below. ' +
           (e.message || ''), 'err');
       } finally { $('crsCheckNow').disabled = false; }
     });
 
+    // open the form for a date; prefill counts if that date already has a snapshot
+    async function openForm(date) {
+      $('crsFormDate').value = date;
+      let snap = null;
+      if (date) { try { snap = await DB.crsGet(date); } catch { /* ignore */ } }
+      buildInputs(snap && snap.distribution);
+      $('crsForm').classList.remove('hidden');
+    }
     $('crsAddToggle').addEventListener('click', () => {
-      const f = $('crsForm');
-      f.classList.toggle('hidden');
-      if (!f.classList.contains('hidden') && !$('crsFormDate').value) {
-        $('crsFormDate').value = new Date().toISOString().slice(0, 10);
-      }
+      if ($('crsForm').classList.contains('hidden')) openForm(new Date().toISOString().slice(0, 10));
+      else $('crsForm').classList.add('hidden');
     });
+    $('crsFormDate').addEventListener('change', () => openForm($('crsFormDate').value));
     $('crsCancel').addEventListener('click', () => $('crsForm').classList.add('hidden'));
 
     $('crsSave').addEventListener('click', async () => {
       const pool_date = $('crsFormDate').value;
       if (!pool_date) { crsMsg('Pick the “pool as of” date.', 'err'); return; }
-      const { distribution, total } = parseDistribution($('crsFormText').value);
-      if (!distribution.length) { crsMsg('Could not read any rows. One row per line: range then number.', 'err'); return; }
+      const distribution = [];
+      $('crsInputs').querySelectorAll('input[data-range]').forEach(inp => {
+        const v = inp.value.trim();
+        if (v !== '' && !Number.isNaN(+v)) distribution.push({ range: inp.dataset.range, count: parseInt(v, 10) });
+      });
+      if (!distribution.length) { crsMsg('Enter at least one count.', 'err'); return; }
       $('crsSave').disabled = true;
       crsMsg('Saving…', '');
       try {
-        await DB.crsUpsert({
-          pool_date, distribution, total,
-          source_url: 'https://www.canada.ca/en/immigration-refugees-citizenship/services/immigrate-canada/express-entry/rounds-invitations.html',
-        });
-        crsMsg(`Saved ${distribution.length} rows for ${fmtDate(pool_date)}.`, 'ok');
-        $('crsFormText').value = '';
+        await DB.crsUpsert({ pool_date, distribution, total: computeTotal(distMap(distribution)), source_url: SOURCE_URL });
+        crsMsg(`Saved ${distribution.length} counts for ${fmtDate(pool_date)}.`, 'ok');
         $('crsForm').classList.add('hidden');
-        await loadCrs(pool_date);
+        await loadCrs();
       } catch (e) {
         crsMsg('Save failed: ' + (e.message || ''), 'err');
       } finally { $('crsSave').disabled = false; }
