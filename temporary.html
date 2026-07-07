@@ -341,7 +341,7 @@
     const fmtDate = d => new Date(`${d}T00:00`).toLocaleDateString(undefined,
       { year: 'numeric', month: 'short', day: 'numeric' });
     const fmtShort = d => new Date(`${d}T00:00`).toLocaleDateString(undefined,
-      { month: 'short', day: 'numeric' });
+      { year: '2-digit', month: 'short', day: 'numeric' });
     const distMap = dist => Object.fromEntries((dist || []).map(d => [d.range, d.count]));
     const computeTotal = m => RANGES.filter(x => !x.sub)
       .reduce((a, x) => a + (Number(m[x.r]) || 0), 0);
