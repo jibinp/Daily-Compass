@@ -146,6 +146,14 @@
     .crs-table td:last-child, .crs-table th:last-child { text-align: right; font-variant-numeric: tabular-nums; }
     .crs-table tr.total td { font-weight: 700; color: var(--accent); border-top: 1px solid var(--border); }
     .crs-table tr.sub td:first-child { padding-left: 24px; color: var(--muted); font-size: 0.82rem; }
+    .crs-table tr.grp { cursor: pointer; }
+    .crs-table tr.grp:hover td:first-child { color: var(--accent); }
+    .crs-table tr.grp td:first-child { user-select: none; }
+    .tw {
+      display: inline-block; width: 1em; margin-right: 4px;
+      color: var(--muted); font-size: 0.7rem; transition: transform 0.15s;
+    }
+    .tw.open { transform: rotate(90deg); }
     .crs-table td:first-child, .crs-table th:first-child {
       position: sticky; left: 0; z-index: 1; background: var(--card); text-align: left;
       min-width: 110px; box-shadow: 1px 0 0 var(--border);
@@ -350,8 +358,15 @@
     const computeTotal = m => RANGES.filter(x => !x.sub)
       .reduce((a, x) => a + (Number(m[x.r]) || 0), 0);
 
-    // pivot: fixed ranges as rows, most-recent date first as columns
+    // which top-level rows have sub-bands, and each sub's parent
+    const parentOf = {}, hasSubs = {};
+    (() => { let cur = null; for (const rg of RANGES) { if (rg.sub) { parentOf[rg.r] = cur; hasSubs[cur] = true; } else cur = rg.r; } })();
+    const expanded = new Set();        // collapsed by default
+    let crsRows = [];
+
+    // pivot: fixed ranges as rows, most-recent date first as columns; groups collapse
     function renderPivot(rows) {
+      crsRows = rows;
       const t = $('crsPivot');
       if (!rows.length) {
         t.innerHTML = '<tbody><tr><td>No snapshots yet. Use “Add / update a date”.</td></tr></tbody>';
@@ -362,16 +377,30 @@
       const maps = {}; rows.forEach(r => { maps[r.pool_date] = distMap(r.distribution); });
       const head = `<thead><tr><th>CRS score range</th>${
         cols.map(d => `<th>${fmtShort(d)}</th>`).join('')}</tr></thead>`;
-      const body = RANGES.map(rg =>
-        `<tr class="${rg.sub ? 'sub' : ''}"><td>${rg.r}</td>${
-          cols.map(d => `<td>${num(maps[d][rg.r])}</td>`).join('')}</tr>`
-      ).join('');
+      let body = '';
+      for (const rg of RANGES) {
+        if (rg.sub && !expanded.has(parentOf[rg.r])) continue;   // hide subs unless parent open
+        const cells = cols.map(d => `<td>${num(maps[d][rg.r])}</td>`).join('');
+        if (!rg.sub && hasSubs[rg.r]) {
+          const open = expanded.has(rg.r);
+          body += `<tr class="grp" data-range="${rg.r}"><td><span class="tw${open ? ' open' : ''}">▶</span>${rg.r}</td>${cells}</tr>`;
+        } else {
+          body += `<tr class="${rg.sub ? 'sub' : ''}"><td>${rg.r}</td>${cells}</tr>`;
+        }
+      }
       const totalRow = `<tr class="total"><td>Total</td>${
         cols.map(d => `<td>${num(computeTotal(maps[d]) || null)}</td>`).join('')}</tr>`;
       t.innerHTML = head + '<tbody>' + body + totalRow + '</tbody>';
       $('crsMeta').innerHTML =
         `Latest: pool as of <strong>${fmtDate(cols[0])}</strong> · ${cols.length} snapshot(s)`;
     }
+
+    $('crsPivot').addEventListener('click', e => {
+      const tr = e.target.closest('tr.grp'); if (!tr) return;
+      const r = tr.dataset.range;
+      expanded.has(r) ? expanded.delete(r) : expanded.add(r);
+      renderPivot(crsRows);
+    });
 
     function buildInputs(dist) {
       const m = distMap(dist);
