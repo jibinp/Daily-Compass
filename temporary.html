@@ -29,7 +29,7 @@
       align-items: center;
       padding-bottom: 48px;
     }
-    .wrap { width: 100%; max-width: 760px; padding: 20px 20px 0; }
+    .wrap { width: 100%; max-width: 1000px; padding: 20px 20px 0; }
     .field {
       background: var(--card); border: 1px solid var(--border);
       border-radius: 14px; padding: 16px; margin-bottom: 14px;
@@ -145,11 +145,14 @@
     .crs-table tr.total td { font-weight: 700; color: var(--accent); border-top: 1px solid var(--border); }
     .crs-table tr.sub td:first-child { padding-left: 24px; color: var(--muted); font-size: 0.82rem; }
     .crs-table td:first-child, .crs-table th:first-child {
-      position: sticky; left: 0; background: var(--card); text-align: left;
+      position: sticky; left: 0; z-index: 1; background: var(--card); text-align: left;
+      min-width: 110px; box-shadow: 1px 0 0 var(--border);
     }
     .crs-table th:not(:first-child), .crs-table td:not(:first-child) {
       text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap;
+      min-width: 88px;
     }
+    .crs-table thead th:not(:first-child) { color: var(--accent); }
     .crs-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; margin: 4px 0; }
     @media (max-width: 480px) { .crs-inputs { grid-template-columns: 1fr; } }
     .crs-in { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
