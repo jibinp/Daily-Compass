@@ -314,21 +314,21 @@
     const RANGES = [
       { r: '601-1200' },
       { r: '501-600' },
-      { r: '451-500' },
-      { r: '491-500', sub: true },
+      { r: '491-500' },              // group = sum of the 5 sub-bands below
       { r: '481-490', sub: true },
       { r: '471-480', sub: true },
       { r: '461-470', sub: true },
       { r: '451-460', sub: true },
-      { r: '401-450' },
       { r: '441-450', sub: true },
-      { r: '431-440', sub: true },
-      { r: '421-430', sub: true },
-      { r: '411-420', sub: true },
-      { r: '401-410', sub: true },
-      { r: '351-400' },
+      { r: '401-440' },              // group = sum of the 5 sub-bands below
+      { r: '391-400', sub: true },
+      { r: '381-390', sub: true },
+      { r: '371-380', sub: true },
+      { r: '361-370', sub: true },
+      { r: '351-360', sub: true },
       { r: '301-350' },
       { r: '0-300' },
+      { r: '0 (No Score)' },
     ];
     const SOURCE_URL =
       'https://www.canada.ca/en/immigration-refugees-citizenship/services/immigrate-canada/express-entry/rounds-invitations.html';
