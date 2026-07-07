@@ -29,7 +29,7 @@
       align-items: center;
       padding-bottom: 48px;
     }
-    .wrap { width: 100%; max-width: 960px; padding: 24px 24px 0; }
+    .wrap { width: 100%; max-width: 1120px; padding: 24px 24px 0; }
     header { text-align: center; margin-bottom: 8px; }
     h1 { font-size: 1.4rem; margin: 0; }
     .date-line {
@@ -62,6 +62,7 @@
     input[type="time"], input[type="date"] {
       flex: 1;
       width: 100%;
+      min-width: 0;
       background: var(--field);
       border: 1px solid var(--border);
       color: var(--text);
@@ -90,6 +91,22 @@
       font-size: 1.3rem; font-weight: 700; color: var(--accent);
       padding: 4px 2px 0;
     }
+    .tz-select {
+      margin-left: auto; max-width: 55%;
+      background: var(--field); border: 1px solid var(--border);
+      color: var(--text); border-radius: 8px; padding: 5px 8px;
+      font-size: 0.8rem; color-scheme: dark; cursor: pointer;
+    }
+    .tz-select:focus { outline: none; border-color: var(--accent); }
+    .tz-label { font-size: 0.8rem; color: var(--muted); padding: 2px 2px 0; }
+    .tz-select-sm {
+      width: 100%; margin-top: 6px;
+      background: var(--field); border: 1px solid var(--border);
+      color: var(--muted); border-radius: 8px; padding: 6px 8px;
+      font-size: 0.78rem; color-scheme: dark; cursor: pointer;
+    }
+    .tz-select-sm:focus { outline: none; border-color: var(--accent); color: var(--text); }
+    .zone-tag { color: var(--muted); font-size: 0.72rem; }
     .bar {
       height: 10px; background: var(--field);
       border: 1px solid var(--border); border-radius: 6px; overflow: hidden;
@@ -112,12 +129,55 @@
     .msg.ok { color: var(--ok); }
     .msg.err { color: var(--err); }
     .hidden { display: none !important; }
+    /* ---- side drawer nav ---- */
+    .hamburger {
+      background: none; border: none; color: var(--text);
+      font-size: 1.4rem; line-height: 1; cursor: pointer; padding: 0;
+    }
+    .sidebar {
+      position: fixed; top: 0; left: 0; bottom: 0; width: 260px; max-width: 82vw;
+      background: var(--card); border-right: 1px solid var(--border);
+      transform: translateX(-100%); transition: transform 0.22s ease;
+      z-index: 110; display: flex; flex-direction: column; gap: 4px;
+      padding: 16px 12px;
+    }
+    .sidebar.open { transform: translateX(0); }
+    .sidebar-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 4px 8px 6px; margin-bottom: 8px;
+    }
+    .sidebar-title { font-weight: 700; font-size: 1.05rem; }
+    .sidebar-close {
+      background: none; border: none; color: var(--muted);
+      font-size: 1.2rem; line-height: 1; cursor: pointer; padding: 4px;
+    }
+    .nav-link {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 14px; border-radius: 10px;
+      color: var(--text); text-decoration: none; font-size: 0.95rem;
+    }
+    .nav-link:hover { background: var(--field); }
+    .nav-link.active { background: var(--field); color: var(--accent); font-weight: 600; }
+    .nav-link.soon { opacity: 0.5; pointer-events: none; }
+    .nav-icon { font-size: 1.2rem; }
+    .nav-soon-tag {
+      margin-left: auto; font-size: 0.65rem; color: var(--muted);
+      border: 1px solid var(--border); border-radius: 6px; padding: 1px 6px;
+    }
+    .sidebar-backdrop {
+      position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5);
+      z-index: 105; opacity: 0; pointer-events: none; transition: opacity 0.22s;
+    }
+    .sidebar-backdrop.open { opacity: 1; pointer-events: auto; }
     .topbar {
+      position: sticky; top: 0; z-index: 50;
       width: 100%;
       display: flex; justify-content: space-between; align-items: center;
       font-size: 0.85rem; color: var(--muted);
       padding: 12px 20px; border-bottom: 1px solid var(--border);
+      background: var(--bg);
     }
+    .topbar-title { font-weight: 700; font-size: 1rem; color: var(--text); }
     .link-btn {
       background: none; border: none; color: var(--accent);
       cursor: pointer; font-size: 0.8rem; padding: 0;
@@ -173,119 +233,145 @@
     tr.dup td, td.dupcell { background: rgba(248, 113, 113, 0.14); }
     .dup-note { color: var(--err); font-size: 0.85rem; margin: 6px 0; }
     .warn { color: var(--err); }
+    /* two-column: entry left, live analysis right */
+    .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+    .col { min-width: 0; }
+    .col .field { min-width: 0; }
+    /* inside a half-width column, stack the time fields vertically */
+    .col .grid2 { grid-template-columns: 1fr; }
+    @media (max-width: 760px) { .cols { grid-template-columns: 1fr; } }
+    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
+    .stat {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 12px 10px; text-align: center;
+    }
+    .stat-val { font-size: 1.15rem; font-weight: 700; color: var(--accent); }
+    .stat-lbl { font-size: 0.7rem; color: var(--muted); margin-top: 4px; }
+    .data-head { display: flex; align-items: center; justify-content: space-between; }
+    .data-head h2 { margin: 8px 0; }
   </style>
 </head>
 <body>
+  <!-- ---- side drawer nav ---- -->
+  <div class="sidebar-backdrop" id="navBackdrop"></div>
+  <nav class="sidebar" id="sidebar" aria-label="Main menu">
+    <div class="sidebar-head">
+      <span class="sidebar-title">🧭 Daily Compass</span>
+      <button class="sidebar-close" id="navClose" aria-label="Close menu">✕</button>
+    </div>
+    <a class="nav-link" href="index.html"><span class="nav-icon">🏠</span>Home</a>
+    <a class="nav-link active" href="health-log.html"><span class="nav-icon">🩺</span>Health Log</a>
+    <a class="nav-link" href="temporary.html"><span class="nav-icon">🗓️</span>Temporary</a>
+    <a class="nav-link soon" href="#"><span class="nav-icon">📊</span>Stats<span class="nav-soon-tag">Soon</span></a>
+  </nav>
+
   <div class="topbar">
-    <a class="link-btn" href="index.html">← Home</a>
-    <span id="whoami"></span>
+    <button class="hamburger" id="navToggle" aria-label="Open menu">☰</button>
+    <span class="topbar-title">🩺 Health Log</span>
     <button class="link-btn" id="logoutBtn">Log out</button>
   </div>
   <div class="wrap">
-    <header>
-      <h1>🩺 Health Log</h1>
-    </header>
-    <div class="date-line" id="today"></div>
-
-    <!-- ============ LOGIN VIEW ============ -->
-    <div id="loginView" class="hidden">
-      <div class="field">
-        <div class="field-head"><span class="icon">🔑</span><span class="label">Sign in</span></div>
-        <div class="row" style="flex-direction:column; gap:10px;">
-          <input type="email" id="email" placeholder="your@email.com" autocomplete="email" />
-          <button class="btn btn-wide" id="loginBtn">Send magic link</button>
-        </div>
-      </div>
-      <div class="msg" id="loginMsg"></div>
-      <div class="note">
-        Enter your email. We send a one-time link. Click it to log in — no password.
-      </div>
-    </div>
 
     <!-- ============ APP VIEW ============ -->
     <div id="appView" class="hidden">
-      <!-- Top row: Log date (required) | Fasting window (auto from eat times) -->
-      <div class="grid2">
-        <div class="field">
-          <div class="field-head"><span class="icon">📅</span><span class="label">Log date</span></div>
-          <div class="row">
-            <input type="date" id="logDate" />
-            <button class="now-btn" id="todayBtn">Today</button>
+      <div class="cols">
+
+        <!-- ---------- LEFT: data entry ---------- -->
+        <section class="col">
+          <div class="field">
+            <div class="field-head"><span class="icon">📅</span><span class="label">Log date</span></div>
+            <div class="row">
+              <input type="date" id="logDate" />
+              <button class="now-btn" id="todayBtn">Today</button>
+            </div>
           </div>
-        </div>
 
-        <div class="field">
-          <div class="field-head"><span class="icon">⏳</span><span class="label">Fasting window</span></div>
-          <div class="row" style="flex-direction: column; align-items: stretch; gap: 8px;">
-            <div id="fasting" class="fasting-val">—</div>
-            <div class="bar"><div id="fastingBar" class="bar-fill"></div></div>
-            <div id="fastingPct" class="bar-pct"></div>
+          <div class="grid2">
+            <div class="field">
+              <div class="field-head"><span class="icon">☀️</span><span class="label">Wakeup</span></div>
+              <div class="row">
+                <input type="datetime-local" id="wakeup" />
+                <button class="now-btn" data-target="wakeup">Now</button>
+              </div>
+              <select class="tz-select-sm" id="tz_wakeup" aria-label="Wakeup time zone"></select>
+            </div>
+            <div class="field">
+              <div class="field-head"><span class="icon">🍽️</span><span class="label">Eat start</span></div>
+              <div class="row">
+                <input type="datetime-local" id="eat_start" />
+                <button class="now-btn" data-target="eat_start">Now</button>
+              </div>
+              <select class="tz-select-sm" id="tz_eat_start" aria-label="Eat start time zone"></select>
+            </div>
+            <div class="field">
+              <div class="field-head"><span class="icon">🏁</span><span class="label">Eat end</span></div>
+              <div class="row">
+                <input type="datetime-local" id="eat_end" />
+                <button class="now-btn" data-target="eat_end">Now</button>
+              </div>
+              <select class="tz-select-sm" id="tz_eat_end" aria-label="Eat end time zone"></select>
+            </div>
+            <div class="field">
+              <div class="field-head"><span class="icon">🌙</span><span class="label">Sleep</span></div>
+              <div class="row">
+                <input type="datetime-local" id="sleep" />
+                <button class="now-btn" data-target="sleep">Now</button>
+              </div>
+              <select class="tz-select-sm" id="tz_sleep" aria-label="Sleep time zone"></select>
+            </div>
           </div>
-        </div>
-      </div>
 
-      <!-- 2×2 grid: Wakeup | Sleep, then Eat start | Eat end -->
-      <div class="grid2">
-        <div class="field">
-          <div class="field-head"><span class="icon">☀️</span><span class="label">Wakeup</span></div>
-          <div class="row">
-            <input type="datetime-local" id="wakeup" />
-            <button class="now-btn" data-target="wakeup">Now</button>
+          <button class="btn btn-wide" id="saveBtn">Save</button>
+          <div class="msg" id="saveMsg"></div>
+          <a class="btn-alt" id="supabaseLink" target="_blank" rel="noopener">Open in Supabase</a>
+
+          <div class="note">
+            Tap <strong>Now</strong> to fill a field with the current time, or pick
+            date &amp; time manually. Filled fields save on <strong>Save</strong>.
           </div>
-        </div>
+        </section>
 
-        <div class="field">
-          <div class="field-head"><span class="icon">🌙</span><span class="label">Sleep</span></div>
-          <div class="row">
-            <input type="datetime-local" id="sleep" />
-            <button class="now-btn" data-target="sleep">Now</button>
+        <!-- ---------- RIGHT: live analysis ---------- -->
+        <section class="col">
+          <div class="field">
+            <div class="field-head"><span class="icon">🛌</span><span class="label">Sleep last night</span></div>
+            <div id="sleepLast" class="fasting-val">—</div>
           </div>
-        </div>
 
-        <div class="field">
-          <div class="field-head"><span class="icon">🍽️</span><span class="label">Eat start</span></div>
-          <div class="row">
-            <input type="datetime-local" id="eat_start" />
-            <button class="now-btn" data-target="eat_start">Now</button>
+          <div class="field">
+            <div class="field-head">
+              <span class="icon">⏳</span><span class="label">Fasting window</span>
+              <select id="tzSelect" class="tz-select" aria-label="Time zone"></select>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:8px;">
+              <div id="fasting" class="fasting-val">—</div>
+              <div class="bar"><div id="fastingBar" class="bar-fill"></div></div>
+              <div id="fastingPct" class="bar-pct"></div>
+              <div id="tzLabel" class="tz-label"></div>
+            </div>
           </div>
-        </div>
 
-        <div class="field">
-          <div class="field-head"><span class="icon">🏁</span><span class="label">Eat end</span></div>
-          <div class="row">
-            <input type="datetime-local" id="eat_end" />
-            <button class="now-btn" data-target="eat_end">Now</button>
+          <div class="stats">
+            <div class="stat"><div class="stat-val" id="statDays">—</div><div class="stat-lbl">Days logged</div></div>
+            <div class="stat"><div class="stat-val" id="statEat">—</div><div class="stat-lbl">Avg eating window</div></div>
+            <div class="stat"><div class="stat-val" id="statSleep">—</div><div class="stat-lbl">Avg sleep</div></div>
           </div>
-        </div>
-      </div>
 
-      <button class="btn btn-wide" id="saveBtn">Save</button>
-      <div class="msg" id="saveMsg"></div>
+          <div class="data-head">
+            <h2>All data</h2>
+            <button class="link-btn" id="refreshBtn">↻ Refresh</button>
+          </div>
+          <div class="dup-note hidden" id="dupNote"></div>
+          <div class="table-wrap">
+            <table id="dataTable">
+              <thead>
+                <tr><th>Date</th><th>Wakeup</th><th>Eat start</th><th>Eat end</th><th>Sleep</th></tr>
+              </thead>
+              <tbody id="dataBody"></tbody>
+            </table>
+          </div>
+        </section>
 
-      <div class="btn-row">
-        <button class="btn-alt" id="viewDataBtn">View all data</button>
-        <a class="btn-alt" id="supabaseLink" target="_blank" rel="noopener">Open in Supabase</a>
-      </div>
-
-      <div id="dataView" class="hidden">
-        <h2>All data</h2>
-        <div class="dup-note hidden" id="dupNote"></div>
-        <div class="table-wrap">
-          <table id="dataTable">
-            <thead>
-              <tr><th>Date</th><th>Wakeup</th><th>Eat start</th><th>Eat end</th><th>Sleep</th></tr>
-            </thead>
-            <tbody id="dataBody"></tbody>
-          </table>
-        </div>
-      </div>
-
-      <h2>Recent</h2>
-      <ul class="list" id="recentList"></ul>
-
-      <div class="note">
-        Tap <strong>Now</strong> to fill a field with the current time, or pick a
-        date &amp; time manually. Filled fields save when you tap <strong>Save today</strong>.
       </div>
     </div>
   </div>
@@ -333,10 +419,10 @@
       async signOut() {
         await supabase.auth.signOut();
       },
-      async addEvent({ aspect, title, datetime, log_date, notes }) {
+      async addEvent({ aspect, title, datetime, log_date, notes, tz }) {
         const { error } = await supabase
           .from('events')
-          .insert({ aspect, title, datetime, log_date, notes: notes ?? null });
+          .insert({ aspect, title, datetime, log_date, tz: tz ?? null, notes: notes ?? null });
         if (error) throw error;
       },
       async recentEvents(limit = 15) {
@@ -351,17 +437,21 @@
       async allEvents() {
         const { data, error } = await supabase
           .from('events')
-          .select('id, aspect, title, datetime, log_date')
+          .select('id, aspect, title, datetime, log_date, tz')
           .order('log_date', { ascending: false })
           .order('datetime', { ascending: true });
         if (error) throw error;
         return data;
       },
       async lastEatEnd() {
+        return this.lastEvent('eat_end');
+      },
+      // latest datetime recorded for an aspect, else null
+      async lastEvent(aspect) {
         const { data, error } = await supabase
           .from('events')
           .select('datetime')
-          .eq('aspect', 'eat_end')
+          .eq('aspect', aspect)
           .order('datetime', { ascending: false })
           .limit(1);
         if (error) throw error;
@@ -374,6 +464,16 @@
       async updateEvent(id, fields) {
         const { error } = await supabase.from('events').update(fields).eq('id', id);
         if (error) throw error;
+      },
+      // all events logged on a given day → [{ aspect, datetime }]
+      async dayEvents(logDate) {
+        const { data, error } = await supabase
+          .from('events')
+          .select('aspect, datetime, tz')
+          .eq('log_date', logDate)
+          .order('datetime', { ascending: true });
+        if (error) throw error;
+        return data;
       },
       // id of an existing event of this aspect on this log day, else null
       async findSameDay(aspect, logDate) {
@@ -395,6 +495,97 @@
     // UI helpers
     // ================================================================
     const $ = id => document.getElementById(id);
+
+    // ---- side drawer nav ----
+    const openNav  = () => { $('sidebar').classList.add('open'); $('navBackdrop').classList.add('open'); };
+    const closeNav = () => { $('sidebar').classList.remove('open'); $('navBackdrop').classList.remove('open'); };
+    $('navToggle').addEventListener('click', openNav);
+    $('navClose').addEventListener('click', closeNav);
+    $('navBackdrop').addEventListener('click', closeNav);
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeNav(); });
+
+    // ================================================================
+    // Time zones — PER EVENT. You may wake in India, eat in England,
+    // sleep in Canada. Each event stores the zone it happened in, so the
+    // table shows the correct local wall-clock per place. Durations
+    // (fasting / sleep) stay absolute and remain correct across zones.
+    // ================================================================
+    const TZ_KEY = 'dc_tz';
+    const TZ_FIELDS = ['wakeup', 'eat_start', 'eat_end', 'sleep'];
+    const detectedTz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    let currentTz = localStorage.getItem(TZ_KEY) || detectedTz;   // default for new entries
+
+    let ZONES = [];
+    try { ZONES = Intl.supportedValuesOf('timeZone'); } catch { ZONES = []; }
+    if (!ZONES.includes(detectedTz)) ZONES.unshift(detectedTz);
+    if (!ZONES.length) ZONES = [detectedTz, 'UTC'];
+
+    function tzOffset(tz) {                      // → "GMT+5:30"
+      try {
+        const p = new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'shortOffset' })
+          .formatToParts(new Date()).find(x => x.type === 'timeZoneName');
+        return p ? p.value : '';
+      } catch { return ''; }
+    }
+    // minutes east of UTC for `tz` at instant `date`
+    function tzOffsetMinutes(tz, date) {
+      const p = new Intl.DateTimeFormat('en-US', {
+        timeZone: tz, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+      }).formatToParts(date).reduce((a, x) => (a[x.type] = x.value, a), {});
+      const asUTC = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second);
+      return Math.round((asUTC - date.getTime()) / 60000);
+    }
+    // wall-clock "YYYY-MM-DDTHH:MM" interpreted in `tz` → UTC Date
+    function zonedToUtc(naive, tz) {
+      const [d, t] = naive.split('T');
+      const [y, mo, da] = d.split('-').map(Number);
+      const [h, mi] = t.split(':').map(Number);
+      const guess = Date.UTC(y, mo - 1, da, h, mi);
+      let off = tzOffsetMinutes(tz, new Date(guess));
+      off = tzOffsetMinutes(tz, new Date(guess - off * 60000));   // refine across DST edges
+      return new Date(guess - off * 60000);
+    }
+    // stored UTC ISO → wall-clock "YYYY-MM-DDTHH:MM" in `tz` (for inputs)
+    function isoToZonedLocal(iso, tz) {
+      const p = new Intl.DateTimeFormat('en-CA', {
+        timeZone: tz, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit',
+      }).formatToParts(new Date(iso)).reduce((a, x) => (a[x.type] = x.value, a), {});
+      return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;
+    }
+    function nowInTz(tz) { return isoToZonedLocal(new Date().toISOString(), tz); }  // for Now buttons
+    const fieldTz = id => ($('tz_' + id) && $('tz_' + id).value) || currentTz;
+    const shortZone = tz => (tz || '').split('/').pop().replace(/_/g, ' ');
+
+    function optionsHtml(selected) {
+      return ZONES.map(z =>
+        `<option value="${z}"${z === selected ? ' selected' : ''}>${z.replace(/_/g, ' ')} (${tzOffset(z)})</option>`
+      ).join('');
+    }
+    function updateTzLabel() {
+      const off = tzOffset(currentTz);
+      const auto = currentTz === detectedTz ? ' · auto' : '';
+      $('tzLabel').textContent =
+        `🌐 Default: ${currentTz.replace(/_/g, ' ')}${off ? ' (' + off + ')' : ''}${auto}`;
+    }
+    function initTz() {
+      // default-zone selector (near the timer) → sets the default for new entries
+      const g = $('tzSelect');
+      g.innerHTML = optionsHtml(currentTz);
+      g.addEventListener('change', () => {
+        currentTz = g.value;
+        localStorage.setItem(TZ_KEY, currentTz);
+        TZ_FIELDS.forEach(id => { if ($('tz_' + id)) $('tz_' + id).value = currentTz; });
+        updateTzLabel();
+        renderDataTable().catch(() => {});
+      });
+      // per-event selectors
+      TZ_FIELDS.forEach(id => { const s = $('tz_' + id); if (s) s.innerHTML = optionsHtml(currentTz); });
+      updateTzLabel();
+    }
+    initTz();
+
     const FIELDS = [
       { id: 'wakeup',    label: 'Wakeup' },
       { id: 'eat_start', label: 'Eating start' },
@@ -402,26 +593,14 @@
       { id: 'sleep',     label: 'Sleep' },
     ];
 
-    function fmtToday() {
-      const d = new Date();
-      const opts = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
-      $('today').textContent = d.toLocaleDateString(undefined, opts);
-    }
     const pad = n => String(n).padStart(2, '0');
-    function nowTime() {          // current HH:MM
-      const d = new Date();
-      return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-    }
     function todayDate() {        // current YYYY-MM-DD
       const d = new Date();
       return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
     }
-    function localNow() {         // current full datetime-local value
-      return `${todayDate()}T${nowTime()}`;
-    }
-    function fmtWhen(iso) {
+    function fmtWhen(iso, tz = currentTz) {
       return new Date(iso).toLocaleString(undefined,
-        { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: tz });
     }
     function msg(el, text, kind) {
       el.textContent = text;
@@ -447,24 +626,6 @@
     }
 
     // ================================================================
-    // Login view
-    // ================================================================
-    $('loginBtn').addEventListener('click', async () => {
-      const email = $('email').value.trim();
-      if (!email) { msg($('loginMsg'), 'Enter your email.', 'err'); return; }
-      $('loginBtn').disabled = true;
-      msg($('loginMsg'), 'Sending…', '');
-      try {
-        await DB.sendMagicLink(email);
-        msg($('loginMsg'), 'Link sent. Check your email, then click it.', 'ok');
-      } catch (e) {
-        msg($('loginMsg'), e.message || 'Failed to send link.', 'err');
-      } finally {
-        $('loginBtn').disabled = false;
-      }
-    });
-
-    // ================================================================
     // App view
     // ================================================================
     // Fasting window = time elapsed since the last recorded eat_end (live)
@@ -488,12 +649,51 @@
       try { lastEatEnd = await DB.lastEatEnd(); } catch { /* ignore */ }
       updateFasting();
     }
+
+    // Sleep last night = latest wakeup − latest sleep (when wakeup is after sleep).
+    async function refreshSleepLast() {
+      const el = $('sleepLast');
+      try {
+        const [wake, sleep] = await Promise.all([DB.lastEvent('wakeup'), DB.lastEvent('sleep')]);
+        if (!wake || !sleep) { el.textContent = '—'; return; }
+        const mins = (new Date(wake) - new Date(sleep)) / 60000;
+        if (mins <= 0) { el.textContent = '—'; return; }
+        el.textContent = `${Math.floor(mins / 60)}h ${Math.round(mins % 60)}m`;
+      } catch { el.textContent = '—'; }
+    }
     setInterval(updateFasting, 60000);   // tick every minute
 
     document.querySelectorAll('.now-btn[data-target]').forEach(btn => {
-      btn.addEventListener('click', () => { $(btn.dataset.target).value = localNow(); });
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.target;
+        $(id).value = nowInTz(fieldTz(id));      // current wall-clock in that field's zone
+      });
     });
-    $('todayBtn').addEventListener('click', () => { $('logDate').value = todayDate(); });
+
+    // Load the times already saved for the chosen log date into the fields.
+    async function loadDay(logDate) {
+      FIELDS.forEach(f => { $(f.id).value = ''; });   // clear first
+      TZ_FIELDS.forEach(id => { if ($('tz_' + id)) $('tz_' + id).value = currentTz; });  // reset zones to default
+      if (!logDate) return;
+      try {
+        const rows = await DB.dayEvents(logDate);
+        for (const r of rows) {
+          if (!$(r.aspect)) continue;
+          const tz = r.tz || currentTz;
+          if ($('tz_' + r.aspect)) $('tz_' + r.aspect).value = tz;
+          $(r.aspect).value = isoToZonedLocal(r.datetime, tz);
+        }
+        msg($('saveMsg'), rows.length ? `Loaded ${logDate}.` : `Nothing logged for ${logDate} yet.`,
+          rows.length ? 'ok' : '');
+      } catch (e) {
+        msg($('saveMsg'), 'Could not load day: ' + e.message, 'err');
+      }
+    }
+    $('logDate').addEventListener('change', () => loadDay($('logDate').value));
+    $('todayBtn').addEventListener('click', () => {
+      $('logDate').value = todayDate();
+      loadDay(todayDate());
+    });
 
     $('logoutBtn').addEventListener('click', async () => {
       await DB.signOut();
@@ -531,18 +731,19 @@
 
         msg($('saveMsg'), 'Saving…', '');
         for (const p of plan) {
-          const iso = new Date(p.f.value).toISOString();
+          const tz = fieldTz(p.f.id);                          // zone this event happened in
+          const iso = zonedToUtc(p.f.value, tz).toISOString();  // wall-clock in that zone → UTC
           if (p.existingId) {
-            await DB.updateEvent(p.existingId, { datetime: iso, title: p.f.label });
+            await DB.updateEvent(p.existingId, { datetime: iso, title: p.f.label, tz });
           } else {
-            await DB.addEvent({ aspect: p.f.id, title: p.f.label, datetime: iso, log_date: logDate });
+            await DB.addEvent({ aspect: p.f.id, title: p.f.label, datetime: iso, log_date: logDate, tz });
           }
         }
         msg($('saveMsg'), `Saved ${plan.length} entr${plan.length === 1 ? 'y' : 'ies'}.`, 'ok');
         FIELDS.forEach(f => { $(f.id).value = ''; });
         await refreshFasting();
-        await loadRecent();
-        if (!$('dataView').classList.contains('hidden')) await renderDataTable();
+        await refreshSleepLast();
+        await renderDataTable();
       } catch (e) {
         msg($('saveMsg'), e.message || 'Save failed.', 'err');
       } finally {
@@ -559,9 +760,6 @@
       const d = new Date(iso);
       return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
     };
-    const fmtTime = iso =>
-      new Date(iso).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-
     async function renderDataTable() {
       const rows = await DB.allEvents();
       const body = $('dataBody');
@@ -569,6 +767,7 @@
       if (!rows.length) {
         body.innerHTML = '<tr><td colspan="5">Nothing yet.</td></tr>';
         $('dupNote').classList.add('hidden');
+        renderStats({});
         return;
       }
       // group by log day → { aspect: [rows] }
@@ -578,14 +777,17 @@
         (days[k] = days[k] || {});
         (days[k][r.aspect] = days[k][r.aspect] || []).push(r);
       }
+      renderStats(days);
       let dupCount = 0;
       const cell = list => {
         if (!list || !list.length) return '<td>—</td>';
         const dup = list.length > 1;
         if (dup) dupCount++;
-        const inner = list.map(r =>
-          `${fmtWhen(r.datetime)} <button class="del-btn" data-id="${r.id}" title="Delete">✕</button>`
-        ).join('<br>');
+        const inner = list.map(r => {
+          const z = r.tz || currentTz;
+          const tag = z === currentTz ? '' : ` <span class="zone-tag">${shortZone(z)}</span>`;
+          return `${fmtWhen(r.datetime, z)}${tag} <button class="del-btn" data-id="${r.id}" title="Delete">✕</button>`;
+        }).join('<br>');
         return `<td class="${dup ? 'dupcell' : ''}">${dup ? '⚠ ' : ''}${inner}</td>`;
       };
       for (const k of Object.keys(days).sort().reverse()) {
@@ -605,23 +807,36 @@
       }
     }
 
-    // "View all data" → toggle
-    $('viewDataBtn').addEventListener('click', async () => {
-      const view = $('dataView');
-      if (!view.classList.contains('hidden')) {
-        view.classList.add('hidden');
-        $('viewDataBtn').textContent = 'View all data';
-        return;
+    // Live analysis: averages across logged days.
+    function renderStats(days) {
+      const keys = Object.keys(days);
+      $('statDays').textContent = keys.length || '—';
+      // pick first datetime of an aspect on a day (ignore dup extras)
+      const at = (d, aspect) => d[aspect] && d[aspect].length ? new Date(d[aspect][0].datetime) : null;
+      const avg = (durs) => durs.length
+        ? `${Math.floor(durs.reduce((a, b) => a + b, 0) / durs.length / 60)}h `
+          + `${Math.round(durs.reduce((a, b) => a + b, 0) / durs.length % 60)}m`
+        : '—';
+      const eatDurs = [], sleepDurs = [];
+      const sorted = keys.sort();
+      for (let i = 0; i < sorted.length; i++) {
+        const d = days[sorted[i]];
+        const es = at(d, 'eat_start'), ee = at(d, 'eat_end');
+        if (es && ee && ee > es) eatDurs.push((ee - es) / 60000);
+        // sleep length = this day's Sleep → next day's Wakeup
+        const sl = at(d, 'sleep');
+        const nextWake = i + 1 < sorted.length ? at(days[sorted[i + 1]], 'wakeup') : null;
+        if (sl && nextWake && nextWake > sl) sleepDurs.push((nextWake - sl) / 60000);
       }
-      $('viewDataBtn').textContent = 'Loading…';
-      try {
-        await renderDataTable();
-        view.classList.remove('hidden');
-        $('viewDataBtn').textContent = 'Hide data';
-      } catch (e) {
-        $('viewDataBtn').textContent = 'View all data';
-        msg($('saveMsg'), 'Load failed: ' + e.message, 'err');
-      }
+      $('statEat').textContent = avg(eatDurs);
+      $('statSleep').textContent = avg(sleepDurs);
+    }
+
+    $('refreshBtn').addEventListener('click', async () => {
+      $('refreshBtn').disabled = true;
+      try { await renderDataTable(); await refreshFasting(); await refreshSleepLast(); }
+      catch (e) { msg($('saveMsg'), 'Refresh failed: ' + e.message, 'err'); }
+      finally { $('refreshBtn').disabled = false; }
     });
 
     // Delete a cell entry (event delegation on the table body)
@@ -635,49 +850,28 @@
       try {
         await DB.deleteEvent(btn.dataset.id);
         await renderDataTable();
-        await loadRecent();
       } catch (err) {
         btn.disabled = false;
         msg($('saveMsg'), 'Delete failed: ' + err.message, 'err');
       }
     });
 
-    async function loadRecent() {
-      try {
-        const rows = await DB.recentEvents();
-        const ul = $('recentList');
-        ul.innerHTML = '';
-        if (!rows.length) {
-          ul.innerHTML = '<li><span class="muted">Nothing yet.</span></li>';
-          return;
-        }
-        for (const r of rows) {
-          const li = document.createElement('li');
-          li.innerHTML = `<span>${r.title}</span><span class="when">${fmtWhen(r.datetime)}</span>`;
-          ul.appendChild(li);
-        }
-      } catch (e) {
-        msg($('saveMsg'), 'Could not load recent: ' + e.message, 'err');
-      }
-    }
-
     // ================================================================
     // Route between login / app based on session
     // ================================================================
+    // No session → sign in on the picker page, not here.
     function showLogin() {
-      $('loginView').classList.remove('hidden');
-      $('appView').classList.add('hidden');
+      window.location.replace('index.html');
     }
     async function showApp(session) {
-      $('loginView').classList.add('hidden');
       $('appView').classList.remove('hidden');
-      $('whoami').textContent = session.user.email;
       if (!$('logDate').value) $('logDate').value = todayDate();
+      await loadDay($('logDate').value);
       await refreshFasting();
-      await loadRecent();
+      await refreshSleepLast();
+      await renderDataTable();
     }
 
-    fmtToday();
     DB.onAuthChange(session => {
       if (session) showApp(session); else showLogin();
     });

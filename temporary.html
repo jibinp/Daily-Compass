@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Temporary — Daily Compass</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --field: #0f172a;
+      --border: #334155;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-press: #0ea5e9;
+      --ok: #22c55e;
+      --err: #f87171;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding-bottom: 48px;
+    }
+    .wrap { width: 100%; max-width: 760px; padding: 20px 20px 0; }
+    .field {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 14px; padding: 16px; margin-bottom: 14px;
+    }
+    .field-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+    .icon { font-size: 1.3rem; }
+    .label { font-weight: 600; font-size: 1.05rem; }
+    .muted-note { color: var(--muted); font-size: 0.85rem; line-height: 1.5; }
+    .hidden { display: none !important; }
+    /* topbar */
+    .topbar {
+      position: sticky; top: 0; z-index: 50;
+      width: 100%;
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 0.85rem; color: var(--muted);
+      padding: 12px 20px; border-bottom: 1px solid var(--border);
+      background: var(--bg);
+    }
+    .topbar-title { font-weight: 700; font-size: 1rem; color: var(--text); }
+    .link-btn {
+      background: none; border: none; color: var(--accent);
+      cursor: pointer; font-size: 0.8rem; padding: 0;
+    }
+    /* ---- side drawer nav ---- */
+    .hamburger {
+      background: none; border: none; color: var(--text);
+      font-size: 1.4rem; line-height: 1; cursor: pointer; padding: 0;
+    }
+    .sidebar {
+      position: fixed; top: 0; left: 0; bottom: 0; width: 260px; max-width: 82vw;
+      background: var(--card); border-right: 1px solid var(--border);
+      transform: translateX(-100%); transition: transform 0.22s ease;
+      z-index: 110; display: flex; flex-direction: column; gap: 4px;
+      padding: 16px 12px;
+    }
+    .sidebar.open { transform: translateX(0); }
+    .sidebar-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 4px 8px 6px; margin-bottom: 8px;
+    }
+    .sidebar-title { font-weight: 700; font-size: 1.05rem; }
+    .sidebar-close {
+      background: none; border: none; color: var(--muted);
+      font-size: 1.2rem; line-height: 1; cursor: pointer; padding: 4px;
+    }
+    .nav-link {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 14px; border-radius: 10px;
+      color: var(--text); text-decoration: none; font-size: 0.95rem;
+    }
+    .nav-link:hover { background: var(--field); }
+    .nav-link.active { background: var(--field); color: var(--accent); font-weight: 600; }
+    .nav-link.soon { opacity: 0.5; pointer-events: none; }
+    .nav-icon { font-size: 1.2rem; }
+    .nav-soon-tag {
+      margin-left: auto; font-size: 0.65rem; color: var(--muted);
+      border: 1px solid var(--border); border-radius: 6px; padding: 1px 6px;
+    }
+    .sidebar-backdrop {
+      position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5);
+      z-index: 105; opacity: 0; pointer-events: none; transition: opacity 0.22s;
+    }
+    .sidebar-backdrop.open { opacity: 1; pointer-events: auto; }
+    /* ---- in-page tab bar ---- */
+    .tabs {
+      display: flex; gap: 4px; overflow-x: auto;
+      border-bottom: 1px solid var(--border); margin: 8px 0 20px;
+    }
+    .tab {
+      background: none; border: none; color: var(--muted);
+      font-size: 0.92rem; font-weight: 600; cursor: pointer;
+      padding: 12px 14px; white-space: nowrap;
+      border-bottom: 2px solid transparent; margin-bottom: -1px;
+    }
+    .tab:hover { color: var(--text); }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .tab.soon { opacity: 0.5; pointer-events: none; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    /* placeholder card */
+    .ph {
+      border: 1px dashed var(--border); border-radius: 12px;
+      padding: 14px 16px; color: var(--muted); font-size: 0.85rem;
+      margin-top: 8px;
+    }
+    .ph strong { color: var(--text); }
+    /* ---- CRS distribution ---- */
+    .crs-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0 8px; }
+    .mini-btn {
+      background: var(--accent); color: #04283a; border: none;
+      border-radius: 8px; padding: 7px 12px; font-weight: 700;
+      font-size: 0.8rem; cursor: pointer; white-space: nowrap;
+    }
+    .mini-btn:active { background: var(--accent-press); transform: scale(0.97); }
+    .mini-btn:disabled { opacity: 0.5; cursor: default; }
+    .mini-btn.ghost { background: var(--field); color: var(--text); border: 1px solid var(--border); }
+    .crs-date {
+      background: var(--field); border: 1px solid var(--border);
+      color: var(--text); border-radius: 8px; padding: 7px 8px;
+      font-size: 0.82rem; color-scheme: dark; cursor: pointer; margin-right: auto;
+    }
+    .crs-date:focus { outline: none; border-color: var(--accent); }
+    .crs-msg { font-size: 0.83rem; margin: 6px 0; min-height: 1.1em; }
+    .crs-msg.ok { color: var(--ok); }
+    .crs-msg.err { color: var(--err); }
+    .table-wrap { overflow-x: auto; margin-top: 8px; }
+    .crs-table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+    .crs-table th, .crs-table td {
+      text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border);
+    }
+    .crs-table th { color: var(--muted); font-weight: 600; }
+    .crs-table td:last-child, .crs-table th:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+    .crs-table tr.total td { font-weight: 700; color: var(--accent); border-top: 1px solid var(--border); }
+    .crs-form { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+    .crs-form input[type="date"], .crs-form textarea {
+      background: var(--field); border: 1px solid var(--border);
+      color: var(--text); border-radius: 8px; padding: 9px 10px;
+      font-size: 0.88rem; color-scheme: dark; width: 100%; font-family: inherit;
+    }
+    .crs-form textarea { resize: vertical; }
+    .crs-form input:focus, .crs-form textarea:focus { outline: none; border-color: var(--accent); }
+    .btn-row { display: flex; gap: 8px; margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <!-- ---- side drawer nav ---- -->
+  <div class="sidebar-backdrop" id="navBackdrop"></div>
+  <nav class="sidebar" id="sidebar" aria-label="Main menu">
+    <div class="sidebar-head">
+      <span class="sidebar-title">🧭 Daily Compass</span>
+      <button class="sidebar-close" id="navClose" aria-label="Close menu">✕</button>
+    </div>
+    <a class="nav-link" href="index.html"><span class="nav-icon">🏠</span>Home</a>
+    <a class="nav-link" href="health-log.html"><span class="nav-icon">🩺</span>Health Log</a>
+    <a class="nav-link active" href="temporary.html"><span class="nav-icon">🗓️</span>Temporary</a>
+    <a class="nav-link soon" href="#"><span class="nav-icon">📊</span>Stats<span class="nav-soon-tag">Soon</span></a>
+  </nav>
+
+  <div class="topbar">
+    <button class="hamburger" id="navToggle" aria-label="Open menu">☰</button>
+    <span class="topbar-title">🗓️ Temporary</span>
+    <button class="link-btn" id="logoutBtn">Log out</button>
+  </div>
+
+  <div class="wrap">
+    <!-- ============ APP VIEW ============ -->
+    <div id="appView" class="hidden">
+
+      <!-- tab bar: seasonal / temporary trackers. Drop a new .tab + .tab-panel to add one. -->
+      <div class="tabs" id="tabs">
+        <button class="tab active" data-tab="canada-pr">🇨🇦 Canadian PR</button>
+        <button class="tab soon" data-tab="_soon">＋ More soon</button>
+      </div>
+
+      <!-- ---------- Canadian PR ---------- -->
+      <section class="tab-panel active" id="tab-canada-pr">
+
+        <div class="field">
+          <div class="field-head"><span class="icon">📆</span><span class="label">Days in Canada</span></div>
+          <div class="muted-note">Physical-presence counter toward a residency target.</div>
+          <div class="ph"><strong>Setup pending.</strong> Choose source (auto from trip log / manual) and target (PR 730 · citizenship 1095) — we'll wire this next.</div>
+        </div>
+
+        <div class="field">
+          <div class="field-head"><span class="icon">✅</span><span class="label">Application milestones</span></div>
+          <div class="muted-note">Express Entry / PR process stages with date + status.</div>
+          <div class="ph"><strong>Setup pending.</strong> Profile · ITA · biometrics · medical · PPR · landing.</div>
+        </div>
+
+        <div class="field">
+          <div class="field-head"><span class="icon">⏰</span><span class="label">Deadlines &amp; reminders</span></div>
+          <div class="muted-note">Dates that expire: medical validity, PPR deadline, passport, document requests.</div>
+          <div class="ph"><strong>Setup pending.</strong> Add dated items with countdown.</div>
+        </div>
+
+        <div class="field">
+          <div class="field-head"><span class="icon">📈</span><span class="label">CRS pool distribution</span></div>
+          <div class="muted-note">CRS score distribution of candidates in the Express Entry pool, as published by IRCC. Each snapshot is "pool as of" a date.</div>
+
+          <div class="crs-toolbar">
+            <select id="crsDate" class="crs-date" aria-label="Snapshot date"></select>
+            <button class="mini-btn" id="crsCheckNow" title="Fetch latest from IRCC (needs the deployed function)">Check now</button>
+            <button class="mini-btn ghost" id="crsAddToggle">＋ Add snapshot</button>
+          </div>
+          <div id="crsMsg" class="crs-msg"></div>
+
+          <div class="table-wrap">
+            <table class="crs-table">
+              <thead><tr><th>CRS score range</th><th>Candidates</th></tr></thead>
+              <tbody id="crsBody"></tbody>
+            </table>
+          </div>
+          <div id="crsMeta" class="muted-note"></div>
+
+          <!-- manual add / paste snapshot -->
+          <div id="crsForm" class="crs-form hidden">
+            <label class="muted-note" for="crsFormDate">Pool as of</label>
+            <input type="date" id="crsFormDate" />
+            <label class="muted-note" for="crsFormText">Paste the IRCC distribution — one row per line: range then number (commas ok). Include a "Total" row if present.</label>
+            <textarea id="crsFormText" rows="9" placeholder="601-1200    1,234
+501-600     45,678
+451-500     98,765
+...
+0-300       12,345
+Total       250,000"></textarea>
+            <div class="btn-row">
+              <button class="mini-btn" id="crsSave">Save snapshot</button>
+              <button class="mini-btn ghost" id="crsCancel">Cancel</button>
+            </div>
+          </div>
+        </div>
+
+      </section>
+
+    </div>
+  </div>
+
+  <script type="module">
+    import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+    // ---- config (anon/publishable key; RLS protects data) ----
+    const SUPABASE_URL = 'https://twpzcszcvylhaopcwqkv.supabase.co';
+    const SUPABASE_KEY = 'sb_publishable_c1BhUlrZPf2YsXW_5LdrZw_-wYh4lJM';
+    const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    // single data-access surface (HLD §9)
+    const DB = {
+      onAuthChange(cb) { supabase.auth.onAuthStateChange((_e, s) => cb(s)); },
+      async currentSession() { const { data } = await supabase.auth.getSession(); return data.session; },
+      async signOut() { await supabase.auth.signOut(); },
+
+      // ---- CRS pool distribution snapshots ----
+      async crsUpsert({ pool_date, distribution, total, source_url }) {
+        const { error } = await supabase.from('crs_pool').upsert({
+          pool_date, distribution, total: total ?? null,
+          source_url: source_url ?? null, fetched_at: new Date().toISOString(),
+        }, { onConflict: 'pool_date' });
+        if (error) throw error;
+      },
+      async crsDates() {
+        const { data, error } = await supabase.from('crs_pool')
+          .select('pool_date').order('pool_date', { ascending: false });
+        if (error) throw error;
+        return data.map(r => r.pool_date);
+      },
+      async crsGet(pool_date) {
+        const { data, error } = await supabase.from('crs_pool')
+          .select('pool_date, distribution, total, fetched_at, source_url')
+          .eq('pool_date', pool_date).limit(1);
+        if (error) throw error;
+        return data.length ? data[0] : null;
+      },
+      async crsRefresh() {                       // trigger the server-side IRCC fetch
+        const { data, error } = await supabase.functions.invoke('crs-refresh');
+        if (error) throw error;
+        return data;
+      },
+    };
+
+    const $ = id => document.getElementById(id);
+
+    // ---- side drawer nav ----
+    const openNav  = () => { $('sidebar').classList.add('open'); $('navBackdrop').classList.add('open'); };
+    const closeNav = () => { $('sidebar').classList.remove('open'); $('navBackdrop').classList.remove('open'); };
+    $('navToggle').addEventListener('click', openNav);
+    $('navClose').addEventListener('click', closeNav);
+    $('navBackdrop').addEventListener('click', closeNav);
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeNav(); });
+
+    // ---- in-page tabs ----
+    document.querySelectorAll('.tab:not(.soon)').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const key = btn.dataset.tab;
+        document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t === btn));
+        document.querySelectorAll('.tab-panel').forEach(p =>
+          p.classList.toggle('active', p.id === 'tab-' + key));
+      });
+    });
+
+    $('logoutBtn').addEventListener('click', async () => { await DB.signOut(); });
+
+    // ================================================================
+    // CRS pool distribution
+    // ================================================================
+    const crsMsg = (text, kind) => {
+      const el = $('crsMsg'); el.textContent = text || '';
+      el.className = 'crs-msg' + (kind ? ' ' + kind : '');
+    };
+    const num = n => (n == null ? '—' : Number(n).toLocaleString());
+    const fmtDate = d => new Date(`${d}T00:00`).toLocaleDateString(undefined,
+      { year: 'numeric', month: 'short', day: 'numeric' });
+
+    // Paste → [{range, count}] + total. One row per line: "<label> <number>".
+    function parseDistribution(text) {
+      const distribution = [];
+      let total = null;
+      for (const raw of text.split('\n')) {
+        const m = raw.trim().match(/^(.+?)[\s\t]+([\d,]+)$/);
+        if (!m) continue;
+        const label = m[1].trim();
+        const count = parseInt(m[2].replace(/,/g, ''), 10);
+        if (Number.isNaN(count)) continue;
+        if (/^total\b/i.test(label)) { total = count; continue; }
+        distribution.push({ range: label, count });
+      }
+      return { distribution, total };
+    }
+
+    function renderSnapshot(snap) {
+      const body = $('crsBody');
+      if (!snap || !snap.distribution || !snap.distribution.length) {
+        body.innerHTML = '<tr><td colspan="2">No snapshot yet. Use “Add snapshot”.</td></tr>';
+        $('crsMeta').textContent = '';
+        return;
+      }
+      body.innerHTML = snap.distribution
+        .map(r => `<tr><td>${r.range}</td><td>${num(r.count)}</td></tr>`).join('')
+        + (snap.total != null ? `<tr class="total"><td>Total</td><td>${num(snap.total)}</td></tr>` : '');
+      const fetched = snap.fetched_at ? new Date(snap.fetched_at).toLocaleString() : '';
+      $('crsMeta').innerHTML =
+        `Pool as of <strong>${fmtDate(snap.pool_date)}</strong>${fetched ? ' · saved ' + fetched : ''}`;
+    }
+
+    async function loadCrs(selectDate) {
+      const sel = $('crsDate');
+      const dates = await DB.crsDates();
+      sel.innerHTML = dates.length
+        ? dates.map(d => `<option value="${d}">Pool as of ${fmtDate(d)}</option>`).join('')
+        : '<option value="">No snapshots</option>';
+      const pick = selectDate && dates.includes(selectDate) ? selectDate : dates[0];
+      if (pick) { sel.value = pick; renderSnapshot(await DB.crsGet(pick)); }
+      else renderSnapshot(null);
+    }
+
+    $('crsDate').addEventListener('change', async () => {
+      if ($('crsDate').value) renderSnapshot(await DB.crsGet($('crsDate').value));
+    });
+
+    $('crsCheckNow').addEventListener('click', async () => {
+      $('crsCheckNow').disabled = true;
+      crsMsg('Checking IRCC…', '');
+      try {
+        const res = await DB.crsRefresh();
+        crsMsg(res && res.pool_date ? `Updated: pool as of ${fmtDate(res.pool_date)}.`
+          : 'Checked. No newer data.', 'ok');
+        await loadCrs(res && res.pool_date);
+      } catch (e) {
+        crsMsg('Auto-check unavailable (deploy the crs-refresh function). Add manually below. ' +
+          (e.message || ''), 'err');
+      } finally { $('crsCheckNow').disabled = false; }
+    });
+
+    $('crsAddToggle').addEventListener('click', () => {
+      const f = $('crsForm');
+      f.classList.toggle('hidden');
+      if (!f.classList.contains('hidden') && !$('crsFormDate').value) {
+        $('crsFormDate').value = new Date().toISOString().slice(0, 10);
+      }
+    });
+    $('crsCancel').addEventListener('click', () => $('crsForm').classList.add('hidden'));
+
+    $('crsSave').addEventListener('click', async () => {
+      const pool_date = $('crsFormDate').value;
+      if (!pool_date) { crsMsg('Pick the “pool as of” date.', 'err'); return; }
+      const { distribution, total } = parseDistribution($('crsFormText').value);
+      if (!distribution.length) { crsMsg('Could not read any rows. One row per line: range then number.', 'err'); return; }
+      $('crsSave').disabled = true;
+      crsMsg('Saving…', '');
+      try {
+        await DB.crsUpsert({
+          pool_date, distribution, total,
+          source_url: 'https://www.canada.ca/en/immigration-refugees-citizenship/services/immigrate-canada/express-entry/rounds-invitations.html',
+        });
+        crsMsg(`Saved ${distribution.length} rows for ${fmtDate(pool_date)}.`, 'ok');
+        $('crsFormText').value = '';
+        $('crsForm').classList.add('hidden');
+        await loadCrs(pool_date);
+      } catch (e) {
+        crsMsg('Save failed: ' + (e.message || ''), 'err');
+      } finally { $('crsSave').disabled = false; }
+    });
+
+    // ---- route: no session → sign in on the picker page ----
+    function showLogin() { window.location.replace('index.html'); }
+    async function showApp() {
+      $('appView').classList.remove('hidden');
+      try { await loadCrs(); } catch (e) { crsMsg('Could not load CRS data: ' + (e.message || ''), 'err'); }
+    }
+
+    DB.onAuthChange(session => { if (session) showApp(); else showLogin(); });
+    DB.currentSession().then(s => { if (s) showApp(); else showLogin(); });
+  </script>
+</body>
+</html>

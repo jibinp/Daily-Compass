@@ -8,10 +8,14 @@
     :root {
       --bg: #0f172a;
       --card: #1e293b;
+      --field: #0f172a;
       --border: #334155;
       --text: #e2e8f0;
       --muted: #94a3b8;
       --accent: #38bdf8;
+      --accent-press: #0ea5e9;
+      --ok: #22c55e;
+      --err: #f87171;
     }
     * { box-sizing: border-box; }
     body {
@@ -46,6 +50,7 @@
     .app-text { display: flex; flex-direction: column; }
     .app-name { font-weight: 600; font-size: 1.05rem; }
     .app-desc { color: var(--muted); font-size: 0.85rem; }
+    .go-tag { margin-left: auto; font-size: 1.3rem; color: var(--accent); }
     .soon-tag {
       margin-left: auto; font-size: 0.7rem; color: var(--muted);
       border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px;
@@ -60,13 +65,96 @@
       background: none; border: none; color: var(--accent);
       cursor: pointer; font-size: 0.8rem; padding: 0; text-decoration: none;
     }
+    /* login */
+    .field {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 14px; padding: 16px; margin-bottom: 14px;
+    }
+    .field-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+    .icon { font-size: 1.3rem; }
+    .label { font-weight: 600; font-size: 1.05rem; }
+    input[type="email"], input[type="password"] {
+      width: 100%; background: var(--field); border: 1px solid var(--border);
+      color: var(--text); border-radius: 10px; padding: 10px 12px;
+      font-size: 0.95rem; color-scheme: dark; margin-bottom: 10px;
+    }
+    input:focus { outline: none; border-color: var(--accent); }
+    .btn {
+      background: var(--accent); color: #04283a; border: none;
+      border-radius: 10px; padding: 10px 16px; font-weight: 700;
+      font-size: 0.9rem; cursor: pointer;
+    }
+    .btn:active { background: var(--accent-press); transform: scale(0.97); }
+    .btn:disabled { opacity: 0.5; cursor: default; }
+    .btn-wide { width: 100%; padding: 14px; font-size: 1rem; margin-top: 4px; }
+    .msg { text-align: center; font-size: 0.9rem; margin: 12px 0; min-height: 1.2em; }
+    .msg.ok { color: var(--ok); }
+    .msg.err { color: var(--err); }
+    .note { margin-top: 8px; text-align: center; color: var(--muted); font-size: 0.8rem; line-height: 1.5; }
+    .hidden { display: none !important; }
+    /* ---- side drawer nav ---- */
+    .hamburger {
+      background: none; border: none; color: var(--text);
+      font-size: 1.4rem; line-height: 1; cursor: pointer; padding: 0 6px 0 0;
+    }
+    .sidebar {
+      position: fixed; top: 0; left: 0; bottom: 0; width: 260px; max-width: 82vw;
+      background: var(--card); border-right: 1px solid var(--border);
+      transform: translateX(-100%); transition: transform 0.22s ease;
+      z-index: 110; display: flex; flex-direction: column; gap: 4px;
+      padding: 16px 12px;
+    }
+    .sidebar.open { transform: translateX(0); }
+    .sidebar-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 4px 8px 6px; margin-bottom: 8px;
+    }
+    .sidebar-title { font-weight: 700; font-size: 1.05rem; }
+    .sidebar-close {
+      background: none; border: none; color: var(--muted);
+      font-size: 1.2rem; line-height: 1; cursor: pointer; padding: 4px;
+    }
+    .nav-link {
+      display: flex; align-items: center; gap: 12px;
+      padding: 12px 14px; border-radius: 10px;
+      color: var(--text); text-decoration: none; font-size: 0.95rem;
+    }
+    .nav-link:hover { background: var(--field); }
+    .nav-link.active { background: var(--field); color: var(--accent); font-weight: 600; }
+    .nav-link.soon { opacity: 0.5; pointer-events: none; }
+    .nav-icon { font-size: 1.2rem; }
+    .nav-soon-tag {
+      margin-left: auto; font-size: 0.65rem; color: var(--muted);
+      border: 1px solid var(--border); border-radius: 6px; padding: 1px 6px;
+    }
+    .sidebar-backdrop {
+      position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5);
+      z-index: 105; opacity: 0; pointer-events: none; transition: opacity 0.22s;
+    }
+    .sidebar-backdrop.open { opacity: 1; pointer-events: auto; }
   </style>
 </head>
 <body>
+  <!-- ---- side drawer nav ---- -->
+  <div class="sidebar-backdrop" id="navBackdrop"></div>
+  <nav class="sidebar" id="sidebar" aria-label="Main menu">
+    <div class="sidebar-head">
+      <span class="sidebar-title">🧭 Daily Compass</span>
+      <button class="sidebar-close" id="navClose" aria-label="Close menu">✕</button>
+    </div>
+    <a class="nav-link active" href="index.html"><span class="nav-icon">🏠</span>Home</a>
+    <a class="nav-link" href="health-log.html"><span class="nav-icon">🩺</span>Health Log</a>
+    <a class="nav-link" href="temporary.html"><span class="nav-icon">🗓️</span>Temporary</a>
+    <a class="nav-link soon" href="#"><span class="nav-icon">📊</span>Stats<span class="nav-soon-tag">Soon</span></a>
+  </nav>
+
   <div class="topbar">
-    <a class="link-btn" href="index.html">← Home</a>
+    <span style="display:flex;align-items:center;gap:6px;">
+      <button class="hamburger hidden" id="navToggle" aria-label="Open menu">☰</button>
+      🧭 Daily Compass
+    </span>
     <span id="whoami"></span>
-    <button class="link-btn" id="logoutBtn">Log out</button>
+    <button class="link-btn hidden" id="logoutBtn">Log out</button>
   </div>
   <div class="wrap">
     <header>
@@ -74,24 +162,60 @@
     </header>
     <div class="date-line" id="today"></div>
 
-    <div class="apps">
-      <a class="app-tile" href="health-log.html">
-        <span class="app-icon">🩺</span>
-        <span class="app-text">
-          <span class="app-name">Health Log</span>
-          <span class="app-desc">Wakeup, eating window, sleep</span>
-        </span>
-      </a>
+    <!-- ============ LOGIN VIEW ============ -->
+    <div id="loginView" class="hidden">
+      <div class="field">
+        <div class="field-head"><span class="icon">🔑</span><span class="label">Enter password</span></div>
+        <input type="password" id="password" placeholder="Password" autocomplete="current-password" />
+        <button class="btn btn-wide" id="loginBtn">Sign in</button>
+      </div>
+      <div class="msg" id="loginMsg"></div>
+      <div class="note">
+        <button class="link-btn" id="setupBtn">First time / forgot? Email me a reset link</button>
+      </div>
+    </div>
 
-      <!-- Future apps: drop a tile here + create its .html file -->
-      <a class="app-tile soon" href="#">
-        <span class="app-icon">📊</span>
-        <span class="app-text">
-          <span class="app-name">Stats</span>
-          <span class="app-desc">Trends across aspects</span>
-        </span>
-        <span class="soon-tag">Soon</span>
-      </a>
+    <!-- ============ SET-NEW-PASSWORD VIEW (after reset link) ============ -->
+    <div id="recoveryView" class="hidden">
+      <div class="field">
+        <div class="field-head"><span class="icon">🔐</span><span class="label">Set a new password</span></div>
+        <input type="password" id="newPassword" placeholder="New password (6+ chars)" autocomplete="new-password" />
+        <button class="btn btn-wide" id="savePwBtn">Save password</button>
+      </div>
+      <div class="msg" id="recoveryMsg"></div>
+    </div>
+
+    <!-- ============ PICKER VIEW ============ -->
+    <div id="pickerView" class="hidden">
+      <div class="apps">
+        <a class="app-tile" href="health-log.html">
+          <span class="app-icon">🩺</span>
+          <span class="app-text">
+            <span class="app-name">Health Log</span>
+            <span class="app-desc">Wakeup, eating window, sleep</span>
+          </span>
+          <span class="go-tag">→</span>
+        </a>
+
+        <a class="app-tile" href="temporary.html">
+          <span class="app-icon">🗓️</span>
+          <span class="app-text">
+            <span class="app-name">Temporary</span>
+            <span class="app-desc">Seasonal &amp; temporary trackers · Canadian PR</span>
+          </span>
+          <span class="go-tag">→</span>
+        </a>
+
+        <!-- Future apps: drop a tile here + create its .html file -->
+        <a class="app-tile soon" href="#">
+          <span class="app-icon">📊</span>
+          <span class="app-text">
+            <span class="app-name">Stats</span>
+            <span class="app-desc">Trends across aspects</span>
+          </span>
+          <span class="soon-tag">Soon</span>
+        </a>
+      </div>
     </div>
   </div>
 
@@ -101,19 +225,118 @@
     const SUPABASE_KEY = 'sb_publishable_c1BhUlrZPf2YsXW_5LdrZw_-wYh4lJM';
     const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
+    // Email of the Supabase user. Only the password is typed; this email is sent
+    // silently on sign-in, and is where password-reset/recovery emails go.
+    const ACCOUNT_EMAIL = 'jibinp812@gmail.com';
+
     const $ = id => document.getElementById(id);
+    const msg = (el, text, kind) => { el.textContent = text; el.className = 'msg' + (kind ? ' ' + kind : ''); };
+
+    // ---- side drawer nav ----
+    const openNav  = () => { $('sidebar').classList.add('open'); $('navBackdrop').classList.add('open'); };
+    const closeNav = () => { $('sidebar').classList.remove('open'); $('navBackdrop').classList.remove('open'); };
+    $('navToggle').addEventListener('click', openNav);
+    $('navClose').addEventListener('click', closeNav);
+    $('navBackdrop').addEventListener('click', closeNav);
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeNav(); });
 
     $('today').textContent = new Date().toLocaleDateString(undefined,
       { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
-    // Shared session: show email + logout across all apps (same Supabase project)
-    supabase.auth.getSession().then(({ data }) => {
-      $('whoami').textContent = data.session ? data.session.user.email : '';
+    // ---- login (password only; email from config) ----
+    $('loginBtn').addEventListener('click', async () => {
+      const password = $('password').value;
+      if (!ACCOUNT_EMAIL) { msg($('loginMsg'), 'Set ACCOUNT_EMAIL in the code first.', 'err'); return; }
+      if (!password) { msg($('loginMsg'), 'Enter your password.', 'err'); return; }
+      $('loginBtn').disabled = true;
+      msg($('loginMsg'), 'Signing in…', '');
+      try {
+        const { error } = await supabase.auth.signInWithPassword({ email: ACCOUNT_EMAIL, password });
+        if (error) throw error;
+        // onAuthStateChange renders the picker
+      } catch (e) {
+        msg($('loginMsg'), e.message || 'Sign in failed.', 'err');
+      } finally {
+        $('loginBtn').disabled = false;
+      }
     });
+    $('password').addEventListener('keydown', e => { if (e.key === 'Enter') $('loginBtn').click(); });
+
+    // ---- first-time / forgot: email a reset link ----
+    $('setupBtn').addEventListener('click', async () => {
+      $('setupBtn').disabled = true;
+      msg($('loginMsg'), 'Sending reset link…', '');
+      try {
+        const { error } = await supabase.auth.resetPasswordForEmail(ACCOUNT_EMAIL, {
+          redirectTo: window.location.href.split('#')[0],
+        });
+        if (error) throw error;
+        msg($('loginMsg'), 'Reset link sent to your email. Click it, then set a new password here.', 'ok');
+      } catch (e) {
+        msg($('loginMsg'), e.message || 'Could not send reset link.', 'err');
+      } finally {
+        $('setupBtn').disabled = false;
+      }
+    });
+
+    // ---- after clicking the reset link: set the new password ----
+    $('savePwBtn').addEventListener('click', async () => {
+      const pw = $('newPassword').value;
+      if (!pw || pw.length < 6) { msg($('recoveryMsg'), 'Password must be 6+ chars.', 'err'); return; }
+      $('savePwBtn').disabled = true;
+      msg($('recoveryMsg'), 'Saving…', '');
+      try {
+        const { error } = await supabase.auth.updateUser({ password: pw });
+        if (error) throw error;
+        msg($('recoveryMsg'), 'Password saved. You are signed in.', 'ok');
+        // session is now active → onAuthStateChange shows the picker
+      } catch (e) {
+        msg($('recoveryMsg'), e.message || 'Could not save password.', 'err');
+      } finally {
+        $('savePwBtn').disabled = false;
+      }
+    });
+
     $('logoutBtn').addEventListener('click', async () => {
       await supabase.auth.signOut();
-      $('whoami').textContent = '';
     });
+
+    // ---- routing: login / picker / set-new-password ----
+    let recovering = false;
+    const hide = (...ids) => ids.forEach(i => $(i).classList.add('hidden'));
+
+    function showRecovery() {
+      hide('loginView', 'pickerView');
+      $('recoveryView').classList.remove('hidden');
+      $('logoutBtn').classList.add('hidden');
+    }
+    function render(session) {
+      if (recovering) { showRecovery(); return; }
+      if (session) {
+        hide('loginView', 'recoveryView');
+        $('pickerView').classList.remove('hidden');
+        $('logoutBtn').classList.remove('hidden');
+        $('navToggle').classList.remove('hidden');   // menu only when logged in
+        $('whoami').textContent = session.user.email;
+      } else {
+        hide('pickerView', 'recoveryView');
+        $('loginView').classList.remove('hidden');
+        $('logoutBtn').classList.add('hidden');
+        $('navToggle').classList.add('hidden');
+        closeNav();
+        $('whoami').textContent = '';
+      }
+    }
+
+    // Arriving via a reset link → set-new-password mode.
+    if (location.hash.includes('type=recovery')) { recovering = true; }
+
+    supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'PASSWORD_RECOVERY') { recovering = true; showRecovery(); return; }
+      if (event === 'USER_UPDATED') { recovering = false; }   // new password saved
+      render(session);
+    });
+    supabase.auth.getSession().then(({ data }) => render(data.session));
   </script>
 </body>
 </html>
