@@ -20,20 +20,37 @@ const CORS = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
+const HEADERS = { "User-Agent": UA, "Accept": "text/html,application/xhtml+xml", "Accept-Language": "en-CA,en;q=0.9" };
+const hasTable = (h: string) => /distribution of candidates in the pool as of/i.test(h);
+
+// canada.ca (Akamai) resets Deno's HTTP/2 stream. Try direct over HTTP/1.1, then
+// server-side proxies (which reach canada.ca over h1). Return the first response
+// that actually contains the distribution section.
+async function fetchHtml(): Promise<string> {
+  const attempts: Array<() => Promise<string>> = [
+    async () => {
+      let client: unknown;
+      try { client = (Deno as unknown as { createHttpClient?: (o: unknown) => unknown }).createHttpClient?.({ http2: false }); } catch { /* unstable API off */ }
+      const r = await fetch(IRCC_URL, client ? { headers: HEADERS, client } as RequestInit : { headers: HEADERS });
+      return await r.text();
+    },
+    async () => (await fetch("https://api.allorigins.win/raw?url=" + encodeURIComponent(IRCC_URL), { headers: HEADERS })).text(),
+    async () => (await fetch("https://corsproxy.io/?url=" + encodeURIComponent(IRCC_URL), { headers: HEADERS })).text(),
+    async () => (await fetch("https://r.jina.ai/" + IRCC_URL, { headers: HEADERS })).text(),
+  ];
+  let last = "";
+  for (const a of attempts) {
+    try { const html = await a(); if (hasTable(html)) return html; last = "fetched but no distribution section"; }
+    catch (e) { last = String((e as Error)?.message ?? e); }
+  }
+  throw new Error("all fetch strategies failed (" + last + ")");
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   try {
-    const res = await fetch(IRCC_URL, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml",
-        "Accept-Language": "en-CA,en;q=0.9",
-      },
-    });
-    if (!res.ok) return json({ error: `IRCC fetch failed: ${res.status}` }, 200);
-
-    const parsed = parse(await res.text());
+    const parsed = parse(await fetchHtml());
     if (!parsed) {
       return json({ error: "Could not locate the distribution table (IRCC layout may have changed)." }, 200);
     }
@@ -76,23 +93,29 @@ const stripTags = (s: string) =>
   s.replace(/<[^>]*>/g, "").replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/\s+/g, " ").trim();
 const normBand = (s: string) => s.replace(/[‒-―−]/g, "-").replace(/\s+/g, "");
 
-function parse(html: string) {
-  // Heading: "... distribution of candidates in the pool as of <date>"
-  const hm = html.match(/distribution of candidates in the pool as of\s*([^<]+?)\s*</i);
+function parse(doc: string) {
+  // Heading (HTML or markdown): "... distribution of candidates in the pool as of January 19, 2026"
+  const hm = doc.match(/distribution of candidates in the pool as of[\s:\-]*([A-Za-z]+\.?\s+\d{1,2},?\s+\d{4})/i);
   if (!hm) return null;
-  const pool_date = toISODate(stripTags(hm[1]));
+  const pool_date = toISODate(hm[1]);
   if (!pool_date) return null;
 
-  // First <table> after the heading.
-  const after = html.slice(hm.index ?? 0);
+  // Rows: HTML <tr> blocks if present, else markdown/pipe lines.
+  const after = doc.slice(hm.index ?? 0);
+  let rows: string[][] = [];
   const tm = after.match(/<table[\s\S]*?<\/table>/i);
-  if (!tm) return null;
+  if (tm) {
+    rows = (tm[0].match(/<tr[\s\S]*?<\/tr>/gi) ?? []).map((r) =>
+      (r.match(/<t[hd](?:\s[^>]*)?>([\s\S]*?)<\/t[hd]>/gi) ?? []).map(stripTags));
+  } else {
+    rows = after.split("\n")
+      .filter((l) => l.includes("|"))
+      .map((l) => l.split("|").map((c) => stripTags(c)).filter((c) => c !== ""));
+  }
 
-  const rows = tm[0].match(/<tr[\s\S]*?<\/tr>/gi) ?? [];
   const found = new Map<string, number>();
   const sawLabels: string[] = [];
-  for (const rowHtml of rows) {
-    const cells = (rowHtml.match(/<t[hd](?:\s[^>]*)?>([\s\S]*?)<\/t[hd]>/gi) ?? []).map(stripTags);
+  for (const cells of rows) {
     if (cells.length < 2) continue;
     const label = normBand(cells[0]);
     const count = parseInt(cells[cells.length - 1].replace(/[,\s]/g, ""), 10);
