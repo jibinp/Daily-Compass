@@ -30,6 +30,8 @@ const hasTable = (h: string) => /distribution of candidates in the pool as of/i.
 async function fetchHtml(): Promise<{ html: string; via: string }> {
   const t = () => AbortSignal.timeout(15000);      // fail fast, try next
   const attempts: Array<[string, () => Promise<string>]> = [
+    // jina renders JS and flattens the full table (incl. bold top bands) → prefer it
+    ["jina", async () => (await fetch("https://r.jina.ai/" + IRCC_URL, { headers: HEADERS, signal: t() })).text()],
     ["direct", async () => {
       let client: unknown;
       try { client = (Deno as unknown as { createHttpClient?: (o: unknown) => unknown }).createHttpClient?.({ http2: false }); } catch { /* unstable API off */ }
@@ -38,7 +40,6 @@ async function fetchHtml(): Promise<{ html: string; via: string }> {
     }],
     ["allorigins", async () => (await fetch("https://api.allorigins.win/raw?url=" + encodeURIComponent(IRCC_URL), { headers: HEADERS, signal: t() })).text()],
     ["corsproxy", async () => (await fetch("https://corsproxy.io/?url=" + encodeURIComponent(IRCC_URL), { headers: HEADERS, signal: t() })).text()],
-    ["jina", async () => (await fetch("https://r.jina.ai/" + IRCC_URL, { headers: HEADERS, signal: t() })).text()],
   ];
   let last = "";
   for (const [name, a] of attempts) {
@@ -109,7 +110,9 @@ const SUB = ["491-500", "481-490", "471-480", "461-470", "451-460",
 const KNOWN = new Set([...TOP, ...SUB]);
 
 const stripTags = (s: string) =>
-  s.replace(/<[^>]*>/g, "").replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/\s+/g, " ").trim();
+  s.replace(/<[^>]*>/g, "").replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&")
+    .replace(/[*_`]/g, "")          // strip markdown emphasis (jina returns **bold** top bands)
+    .replace(/\s+/g, " ").trim();
 const normBand = (s: string) => s.replace(/[‒-―−]/g, "-").replace(/\s+/g, "");
 
 function parse(doc: string) {
