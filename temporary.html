@@ -425,7 +425,8 @@
         if (res && res.error) {                       // function ran but couldn't parse
           crsMsg(res.error + (res.sawLabels ? ' Saw: ' + res.sawLabels.slice(0, 8).join(', ') : ''), 'err');
         } else if (res && res.pool_date) {
-          crsMsg(`Updated: pool as of ${fmtDate(res.pool_date)} (${res.rows} bands).`, 'ok');
+          const partial = res.rows < 17 && res.saw ? ' — IRCC labels seen: ' + res.saw.join(' | ') : '';
+          crsMsg(`Updated: pool as of ${fmtDate(res.pool_date)} (${res.rows}/17 bands).${partial}`, res.rows < 17 ? 'err' : 'ok');
           await loadCrs();
         } else {
           crsMsg('Checked — no data returned.', 'err');

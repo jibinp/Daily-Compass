@@ -79,7 +79,9 @@ Deno.serve(async (req) => {
     }, { onConflict: "pool_date" });
     if (error) return json({ error: "DB upsert failed: " + error.message }, 200);
 
-    return json({ pool_date: parsed.pool_date, rows: parsed.distribution.length, total: parsed.total });
+    console.log("matched:", parsed.distribution.map((d) => d.range).join(", "));
+    console.log("saw:", parsed.sawLabels.join(" | "));
+    return json({ pool_date: parsed.pool_date, rows: parsed.distribution.length, total: parsed.total, saw: parsed.sawLabels });
   } catch (e) {
     return json({ error: "Function error: " + String((e as Error)?.message ?? e) }, 200);
   }
