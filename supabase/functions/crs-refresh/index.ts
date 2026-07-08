@@ -137,7 +137,14 @@ function parsePool(doc: string) {
   return { pool_date, distribution, total, sawLabels };
 }
 
-// Fetch a JSON asset (validate JSON.parse). Skip jina (it markdownifies JSON).
+// Some proxies wrap the body as { contents: "<json string>" }. Unwrap it.
+function unwrap(obj: any): any {
+  if (obj && typeof obj.contents === "string") { try { return JSON.parse(obj.contents); } catch { /* keep */ } }
+  return obj;
+}
+const jsonHasRounds = (txt: string) => { try { return !!findRounds(unwrap(JSON.parse(txt))); } catch { return false; } };
+
+// Fetch the JSON, accepting only a response that actually contains the rounds array.
 async function fetchJson(url: string): Promise<string> {
   const t = () => AbortSignal.timeout(15000);
   const tries: Array<[string, () => Promise<string>]> = [
@@ -146,13 +153,18 @@ async function fetchJson(url: string): Promise<string> {
       try { client = (Deno as unknown as { createHttpClient?: (o: unknown) => unknown }).createHttpClient?.({ http2: false }); } catch { /* off */ }
       return await (await fetch(url, { headers: HEADERS, signal: t(), ...(client ? { client } : {}) } as RequestInit)).text();
     }],
-    ["allorigins", async () => (await fetch("https://api.allorigins.win/raw?url=" + encodeURIComponent(url), { headers: HEADERS, signal: t() })).text()],
+    ["allorigins-raw", async () => (await fetch("https://api.allorigins.win/raw?url=" + encodeURIComponent(url), { headers: HEADERS, signal: t() })).text()],
+    ["allorigins-get", async () => (await fetch("https://api.allorigins.win/get?url=" + encodeURIComponent(url), { headers: HEADERS, signal: t() })).text()],
     ["corsproxy", async () => (await fetch("https://corsproxy.io/?url=" + encodeURIComponent(url), { headers: HEADERS, signal: t() })).text()],
   ];
   let last = "";
   for (const [name, fn] of tries) {
-    try { const txt = await fn(); JSON.parse(txt); console.log(`json ok via ${name} (${txt.length} bytes)`); return txt; }
-    catch (e) { last = `${name}: ${String((e as Error)?.message ?? e)}`; console.error(last); }
+    try {
+      const txt = await fn();
+      if (jsonHasRounds(txt)) { console.log(`json ok via ${name} (${txt.length} bytes)`); return txt; }
+      last = `${name}: ${txt.length} bytes, no rounds`;
+      console.log(last);
+    } catch (e) { last = `${name}: ${String((e as Error)?.message ?? e)}`; console.error(last); }
   }
   throw new Error("json fetch failed — " + last);
 }
@@ -171,7 +183,7 @@ function findRounds(obj: any): any[] | null {
 // IRCC ee_rounds JSON → draws. Fields: drawNumber, drawDate, drawName, drawSize, drawCRS.
 function parseDrawsJson(text: string) {
   let obj: any;
-  try { obj = JSON.parse(text); } catch (e) { return { draws: [], diag: { parseError: String((e as Error).message), head: text.slice(0, 200) } }; }
+  try { obj = unwrap(JSON.parse(text)); } catch (e) { return { draws: [], diag: { parseError: String((e as Error).message), head: text.slice(0, 200) } }; }
   const rounds = findRounds(obj);
   if (!rounds) return { draws: [], diag: { topKeys: Object.keys(obj ?? {}), head: JSON.stringify(obj).slice(0, 300) } };
 
