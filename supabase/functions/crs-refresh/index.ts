@@ -110,15 +110,22 @@ function parse(doc: string) {
   const pool_date = toISODate(hm[1]);
   if (!pool_date) return null;
 
-  // Rows: HTML <tr> blocks if present, else markdown/pipe lines.
+  // Region = from the heading to the next <h2> (the distribution section may hold
+  // MORE THAN ONE table: a summary table + a detailed sub-band table).
   const after = doc.slice(hm.index ?? 0);
+  const nextH2 = after.slice(80).search(/<h2[\s>]/i);
+  const region = nextH2 > 0 ? after.slice(0, nextH2 + 80) : after.slice(0, 40000);
+
   let rows: string[][] = [];
-  const tm = after.match(/<table[\s\S]*?<\/table>/i);
-  if (tm) {
-    rows = (tm[0].match(/<tr[\s\S]*?<\/tr>/gi) ?? []).map((r) =>
-      (r.match(/<t[hd](?:\s[^>]*)?>([\s\S]*?)<\/t[hd]>/gi) ?? []).map(stripTags));
+  const tables = region.match(/<table[\s\S]*?<\/table>/gi);
+  if (tables && tables.length) {
+    for (const tbl of tables) {
+      for (const tr of tbl.match(/<tr[\s\S]*?<\/tr>/gi) ?? []) {
+        rows.push((tr.match(/<t[hd](?:\s[^>]*)?>([\s\S]*?)<\/t[hd]>/gi) ?? []).map(stripTags));
+      }
+    }
   } else {
-    rows = after.split("\n")
+    rows = region.split("\n")
       .filter((l) => l.includes("|"))
       .map((l) => l.split("|").map((c) => stripTags(c)).filter((c) => c !== ""));
   }
@@ -131,7 +138,7 @@ function parse(doc: string) {
     const count = parseInt(cells[cells.length - 1].replace(/[,\s]/g, ""), 10);
     if (Number.isNaN(count)) continue;
     sawLabels.push(cells[0]);
-    if (KNOWN.has(label)) found.set(label, count);
+    if (KNOWN.has(label) && !found.has(label)) found.set(label, count);   // first occurrence wins
   }
 
   const distribution = [...TOP, ...SUB].filter((k) => found.has(k)).map((k) => ({ range: k, count: found.get(k)! }));
