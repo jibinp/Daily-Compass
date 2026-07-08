@@ -199,6 +199,13 @@
     .crs-form textarea { resize: vertical; }
     .crs-form input:focus, .crs-form textarea:focus { outline: none; border-color: var(--accent); }
     .btn-row { display: flex; gap: 8px; margin-top: 4px; }
+    /* ---- draws table ---- */
+    .draws-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+    .draws-table th, .draws-table td { padding: 7px 10px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
+    .draws-table th { color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--card); }
+    .draws-table td.cat { white-space: normal; min-width: 190px; }
+    .draws-table td.n { text-align: right; font-variant-numeric: tabular-nums; }
+    .draws-table td.crs { text-align: right; font-variant-numeric: tabular-nums; color: var(--accent); font-weight: 600; }
   </style>
 </head>
 <body>
@@ -216,7 +223,8 @@
       <div class="tchildren" id="g-temp">
         <div class="tfolder tnode" data-group="g-pr"><span class="tw">▾</span>🇨🇦 Canadian PR</div>
         <div class="tchildren" id="g-pr">
-          <a class="tnode active" href="temporary.html"><span class="tw-sp"></span>📈 Pool breakdown</a>
+          <a class="tnode active" href="temporary.html#pool"><span class="tw-sp"></span>📈 Pool breakdown</a>
+          <a class="tnode" href="temporary.html#draws"><span class="tw-sp"></span>🎯 Draws</a>
         </div>
       </div>
       <a class="tnode soon"><span class="tw-sp"></span>📊 Stats</a>
@@ -235,11 +243,12 @@
 
       <!-- tab bar: seasonal / temporary trackers. Drop a new .tab + .tab-panel to add one. -->
       <div class="tabs" id="tabs">
-        <button class="tab active" data-tab="canada-pr">🇨🇦 Canadian PR</button>
+        <button class="tab active" data-tab="pool">📈 Pool breakdown</button>
+        <button class="tab" data-tab="draws">🎯 Draws</button>
       </div>
 
-      <!-- ---------- Canadian PR ---------- -->
-      <section class="tab-panel active" id="tab-canada-pr">
+      <!-- ---------- Canadian PR › Pool breakdown ---------- -->
+      <section class="tab-panel active" id="tab-pool">
 
         <div class="field">
           <div class="field-head"><span class="icon">📈</span><span class="label">CRS pool distribution</span></div>
@@ -270,6 +279,18 @@
           </div>
         </div>
 
+      </section>
+
+      <!-- ---------- Canadian PR › Draws ---------- -->
+      <section class="tab-panel" id="tab-draws">
+        <div class="field">
+          <div class="field-head"><span class="icon">🎯</span><span class="label">Express Entry draws</span></div>
+          <div class="muted-note">Rounds of invitations — date, category, CRS cutoff, and invitations issued. Most recent first.</div>
+          <div id="drawsMeta" class="muted-note"></div>
+          <div class="table-wrap">
+            <table class="draws-table" id="drawsTable"></table>
+          </div>
+        </div>
       </section>
 
     </div>
@@ -318,6 +339,13 @@
         }
         return data;
       },
+      async drawsAll() {
+        const { data, error } = await supabase.from('crs_draws')
+          .select('draw_number, draw_date, round_type, invitations, crs_cutoff')
+          .order('draw_number', { ascending: false });
+        if (error) throw error;
+        return data;
+      },
     };
 
     const $ = id => document.getElementById(id);
@@ -338,13 +366,12 @@
     });
 
     // ---- in-page tabs ----
+    function selectTab(key) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === key));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === 'tab-' + key));
+    }
     document.querySelectorAll('.tab:not(.soon)').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const key = btn.dataset.tab;
-        document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t === btn));
-        document.querySelectorAll('.tab-panel').forEach(p =>
-          p.classList.toggle('active', p.id === 'tab-' + key));
-      });
+      btn.addEventListener('click', () => { selectTab(btn.dataset.tab); location.hash = btn.dataset.tab; });
     });
 
     $('logoutBtn').addEventListener('click', async () => { await DB.signOut(); });
@@ -503,11 +530,28 @@
       } finally { $('crsSave').disabled = false; }
     });
 
+    // ---- draws (Express Entry rounds of invitations) ----
+    async function loadDraws() {
+      const rows = await DB.drawsAll();
+      const t = $('drawsTable');
+      if (!rows.length) { t.innerHTML = '<tbody><tr><td>No draws yet.</td></tr></tbody>'; $('drawsMeta').textContent = ''; return; }
+      const head = '<thead><tr><th>#</th><th>Date</th><th>Category</th><th>CRS</th><th>ITAs</th></tr></thead>';
+      const body = rows.map(r =>
+        `<tr><td class="n">${r.draw_number}</td><td>${fmtDate(r.draw_date)}</td>` +
+        `<td class="cat">${r.round_type || '—'}</td><td class="crs">${num(r.crs_cutoff)}</td><td class="n">${num(r.invitations)}</td></tr>`
+      ).join('');
+      t.innerHTML = head + '<tbody>' + body + '</tbody>';
+      $('drawsMeta').innerHTML = `${rows.length} draws · latest ${fmtDate(rows[0].draw_date)} (CRS ${num(rows[0].crs_cutoff)})`;
+    }
+
     // ---- route: no session → sign in on the picker page ----
     function showLogin() { window.location.replace('index.html'); }
     async function showApp() {
       $('appView').classList.remove('hidden');
       try { await loadCrs(); } catch (e) { crsMsg('Could not load CRS data: ' + (e.message || ''), 'err'); }
+      try { await loadDraws(); } catch (e) { $('drawsMeta').textContent = 'Could not load draws: ' + (e.message || ''); }
+      const h = location.hash.replace('#', '');
+      if (h === 'draws' || h === 'pool') selectTab(h);
     }
 
     DB.onAuthChange(session => { if (session) showApp(); else showLogin(); });
