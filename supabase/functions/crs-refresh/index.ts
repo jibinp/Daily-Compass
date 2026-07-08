@@ -112,14 +112,11 @@ function parse(doc: string) {
   const pool_date = dm ? toISODate(dm[1]) : null;
   if (!pool_date) return null;
 
-  // Region = from the heading to the next <h2> (the distribution section may hold
-  // MORE THAN ONE table: a summary table + a detailed sub-band table).
-  const after = doc.slice(idx);
-  const nextH2 = after.slice(80).search(/<h2[\s>]/i);
-  const region = nextH2 > 0 ? after.slice(0, nextH2 + 80) : after.slice(0, 40000);
-
+  // Scan EVERY table in the document — summary and detailed sub-band tables can
+  // live in different sections. The KNOWN-band filter below keeps only the
+  // distribution rows, so unrelated tables (draw history etc.) are ignored.
   let rows: string[][] = [];
-  const tables = region.match(/<table[\s\S]*?<\/table>/gi);
+  const tables = doc.match(/<table[\s\S]*?<\/table>/gi);
   if (tables && tables.length) {
     for (const tbl of tables) {
       for (const tr of tbl.match(/<tr[\s\S]*?<\/tr>/gi) ?? []) {
@@ -127,10 +124,11 @@ function parse(doc: string) {
       }
     }
   } else {
-    rows = region.split("\n")
+    rows = doc.split("\n")
       .filter((l) => l.includes("|"))
       .map((l) => l.split("|").map((c) => stripTags(c)).filter((c) => c !== ""));
   }
+  console.log(`tables=${tables?.length ?? 0} rows=${rows.length}`);
 
   const found = new Map<string, number>();
   const sawLabels: string[] = [];
