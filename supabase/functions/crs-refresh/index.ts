@@ -28,23 +28,31 @@ const hasTable = (h: string) => /distribution of candidates in the pool as of/i.
 // server-side proxies (which reach canada.ca over h1). Return the first response
 // that actually contains the distribution section.
 async function fetchHtml(): Promise<string> {
-  const attempts: Array<() => Promise<string>> = [
-    async () => {
+  const t = () => AbortSignal.timeout(15000);      // fail fast, try next
+  const attempts: Array<[string, () => Promise<string>]> = [
+    ["direct", async () => {
       let client: unknown;
       try { client = (Deno as unknown as { createHttpClient?: (o: unknown) => unknown }).createHttpClient?.({ http2: false }); } catch { /* unstable API off */ }
-      const r = await fetch(IRCC_URL, client ? { headers: HEADERS, client } as RequestInit : { headers: HEADERS });
+      const r = await fetch(IRCC_URL, { headers: HEADERS, signal: t(), ...(client ? { client } : {}) } as RequestInit);
       return await r.text();
-    },
-    async () => (await fetch("https://api.allorigins.win/raw?url=" + encodeURIComponent(IRCC_URL), { headers: HEADERS })).text(),
-    async () => (await fetch("https://corsproxy.io/?url=" + encodeURIComponent(IRCC_URL), { headers: HEADERS })).text(),
-    async () => (await fetch("https://r.jina.ai/" + IRCC_URL, { headers: HEADERS })).text(),
+    }],
+    ["allorigins", async () => (await fetch("https://api.allorigins.win/raw?url=" + encodeURIComponent(IRCC_URL), { headers: HEADERS, signal: t() })).text()],
+    ["corsproxy", async () => (await fetch("https://corsproxy.io/?url=" + encodeURIComponent(IRCC_URL), { headers: HEADERS, signal: t() })).text()],
+    ["jina", async () => (await fetch("https://r.jina.ai/" + IRCC_URL, { headers: HEADERS, signal: t() })).text()],
   ];
   let last = "";
-  for (const a of attempts) {
-    try { const html = await a(); if (hasTable(html)) return html; last = "fetched but no distribution section"; }
-    catch (e) { last = String((e as Error)?.message ?? e); }
+  for (const [name, a] of attempts) {
+    try {
+      const html = await a();
+      if (hasTable(html)) { console.log(`fetch ok via ${name} (${html.length} bytes)`); return html; }
+      last = `${name}: got ${html.length} bytes, no distribution section`;
+      console.log(last);
+    } catch (e) {
+      last = `${name}: ${String((e as Error)?.message ?? e)}`;
+      console.error(last);
+    }
   }
-  throw new Error("all fetch strategies failed (" + last + ")");
+  throw new Error("all fetch strategies failed — last: " + last);
 }
 
 Deno.serve(async (req) => {
