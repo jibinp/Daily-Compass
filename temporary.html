@@ -301,17 +301,6 @@
           </div>
           <div id="drawsMsg" class="crs-msg"></div>
 
-          <div class="draws-filters">
-            <input type="search" id="drawsSearch" placeholder="Search category…" />
-            <select id="drawsCat"><option value="">All categories</option></select>
-            <select id="drawsYear"><option value="">All years</option></select>
-          </div>
-          <div id="drawsMeta" class="muted-note"></div>
-
-          <div class="table-wrap">
-            <table class="draws-table" id="drawsTable"></table>
-          </div>
-
           <div id="drawsForm" class="crs-form hidden">
             <label class="muted-note" for="dfNum">Draw #</label>
             <input type="number" id="dfNum" inputmode="numeric" />
@@ -327,6 +316,17 @@
               <button class="mini-btn" id="dfSave">Save draw</button>
               <button class="mini-btn ghost" id="dfCancel">Cancel</button>
             </div>
+          </div>
+
+          <div class="draws-filters">
+            <input type="search" id="drawsSearch" placeholder="Search category…" />
+            <select id="drawsCat"><option value="">All categories</option></select>
+            <select id="drawsYear"><option value="">All years</option></select>
+          </div>
+          <div id="drawsMeta" class="muted-note"></div>
+
+          <div class="table-wrap">
+            <table class="draws-table" id="drawsTable"></table>
           </div>
         </div>
       </section>
@@ -649,7 +649,10 @@
       } finally { $('drawsCheckNow').disabled = false; }
     });
 
-    $('drawsAddToggle').addEventListener('click', () => $('drawsForm').classList.toggle('hidden'));
+    $('drawsAddToggle').addEventListener('click', () => {
+      const f = $('drawsForm'); f.classList.toggle('hidden');
+      if (!f.classList.contains('hidden')) $('dfNum').focus();
+    });
     $('dfCancel').addEventListener('click', () => $('drawsForm').classList.add('hidden'));
     $('dfSave').addEventListener('click', async () => {
       const draw_number = parseInt($('dfNum').value, 10);
