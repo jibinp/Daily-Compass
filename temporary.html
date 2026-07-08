@@ -191,7 +191,7 @@
     }
     .crs-in input:focus { outline: none; border-color: var(--accent); }
     .crs-form { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
-    .crs-form input[type="date"], .crs-form textarea {
+    .crs-form input, .crs-form textarea {
       background: var(--field); border: 1px solid var(--border);
       color: var(--text); border-radius: 8px; padding: 9px 10px;
       font-size: 0.88rem; color-scheme: dark; width: 100%; font-family: inherit;
@@ -202,7 +202,8 @@
     /* ---- draws table ---- */
     .draws-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
     .draws-table th, .draws-table td { padding: 7px 10px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
-    .draws-table th { color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--card); }
+    .draws-table th { color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--card); cursor: pointer; user-select: none; }
+    .draws-table th:hover { color: var(--text); }
     .draws-table td.cat { white-space: normal; min-width: 190px; }
     .draws-table td.n { text-align: right; font-variant-numeric: tabular-nums; }
     .draws-table td.crs { text-align: right; font-variant-numeric: tabular-nums; color: var(--accent); font-weight: 600; }
@@ -285,10 +286,34 @@
       <section class="tab-panel" id="tab-draws">
         <div class="field">
           <div class="field-head"><span class="icon">🎯</span><span class="label">Express Entry draws</span></div>
-          <div class="muted-note">Rounds of invitations — date, category, CRS cutoff, and invitations issued. Most recent first.</div>
+          <div class="muted-note">Rounds of invitations. Click a column header to sort.</div>
+
+          <div class="crs-toolbar">
+            <button class="mini-btn" id="drawsCheckNow" title="Fetch latest from IRCC">Check now</button>
+            <button class="mini-btn ghost" id="drawsAddToggle">＋ Add draw</button>
+          </div>
+          <div id="drawsMsg" class="crs-msg"></div>
           <div id="drawsMeta" class="muted-note"></div>
+
           <div class="table-wrap">
             <table class="draws-table" id="drawsTable"></table>
+          </div>
+
+          <div id="drawsForm" class="crs-form hidden">
+            <label class="muted-note" for="dfNum">Draw #</label>
+            <input type="number" id="dfNum" inputmode="numeric" />
+            <label class="muted-note" for="dfDate">Date</label>
+            <input type="date" id="dfDate" />
+            <label class="muted-note" for="dfType">Round type / category</label>
+            <input type="text" id="dfType" placeholder="e.g. Provincial Nominee Program" />
+            <label class="muted-note" for="dfInv">Invitations issued</label>
+            <input type="number" id="dfInv" inputmode="numeric" />
+            <label class="muted-note" for="dfCrs">CRS cutoff</label>
+            <input type="number" id="dfCrs" inputmode="numeric" />
+            <div class="btn-row">
+              <button class="mini-btn" id="dfSave">Save draw</button>
+              <button class="mini-btn ghost" id="dfCancel">Cancel</button>
+            </div>
           </div>
         </div>
       </section>
@@ -345,6 +370,10 @@
           .order('draw_number', { ascending: false });
         if (error) throw error;
         return data;
+      },
+      async drawUpsert(rec) {
+        const { error } = await supabase.from('crs_draws').upsert(rec, { onConflict: 'draw_number' });
+        if (error) throw error;
       },
     };
 
@@ -542,18 +571,76 @@
     });
 
     // ---- draws (Express Entry rounds of invitations) ----
-    async function loadDraws() {
-      const rows = await DB.drawsAll();
+    const drawsMsg = (t, k) => { const el = $('drawsMsg'); el.textContent = t || ''; el.className = 'crs-msg' + (k ? ' ' + k : ''); };
+    let drawsRows = [];
+    let drawsSort = { col: 'draw_number', dir: -1 };   // -1 desc, 1 asc
+    const DRAW_COLS = [['draw_number', '#'], ['draw_date', 'Date'], ['round_type', 'Category'], ['crs_cutoff', 'CRS'], ['invitations', 'ITAs']];
+
+    function renderDrawsTable() {
       const t = $('drawsTable');
-      if (!rows.length) { t.innerHTML = '<tbody><tr><td>No draws yet.</td></tr></tbody>'; $('drawsMeta').textContent = ''; return; }
-      const head = '<thead><tr><th>#</th><th>Date</th><th>Category</th><th>CRS</th><th>ITAs</th></tr></thead>';
-      const body = rows.map(r =>
+      if (!drawsRows.length) { t.innerHTML = '<tbody><tr><td>No draws yet.</td></tr></tbody>'; $('drawsMeta').textContent = ''; return; }
+      const { col, dir } = drawsSort;
+      const sorted = [...drawsRows].sort((a, b) => {
+        let x = a[col], y = b[col];
+        if (col === 'round_type') { x = (x || '').toLowerCase(); y = (y || '').toLowerCase(); return x < y ? -dir : x > y ? dir : 0; }
+        return ((x ?? 0) - (y ?? 0)) * dir;
+      });
+      const arrow = c => col === c ? (dir > 0 ? ' ▲' : ' ▼') : '';
+      const head = '<thead><tr>' + DRAW_COLS.map(([k, l]) => `<th data-col="${k}">${l}${arrow(k)}</th>`).join('') + '</tr></thead>';
+      const body = sorted.map(r =>
         `<tr><td class="n">${r.draw_number}</td><td>${fmtDate(r.draw_date)}</td>` +
         `<td class="cat">${r.round_type || '—'}</td><td class="crs">${num(r.crs_cutoff)}</td><td class="n">${num(r.invitations)}</td></tr>`
       ).join('');
       t.innerHTML = head + '<tbody>' + body + '</tbody>';
-      $('drawsMeta').innerHTML = `${rows.length} draws · latest ${fmtDate(rows[0].draw_date)} (CRS ${num(rows[0].crs_cutoff)})`;
+      const latest = drawsRows.reduce((a, b) => (b.draw_number > a.draw_number ? b : a));
+      $('drawsMeta').innerHTML = `${drawsRows.length} draws · latest #${latest.draw_number} ${fmtDate(latest.draw_date)} (CRS ${num(latest.crs_cutoff)})`;
     }
+    async function loadDraws() { drawsRows = await DB.drawsAll(); renderDrawsTable(); }
+
+    $('drawsTable').addEventListener('click', e => {
+      const th = e.target.closest('th[data-col]'); if (!th) return;
+      const c = th.dataset.col;
+      if (drawsSort.col === c) drawsSort.dir *= -1;
+      else drawsSort = { col: c, dir: c === 'round_type' ? 1 : -1 };
+      renderDrawsTable();
+    });
+
+    $('drawsCheckNow').addEventListener('click', async () => {
+      $('drawsCheckNow').disabled = true;
+      drawsMsg('Checking IRCC…', '');
+      try {
+        const res = await DB.crsRefresh();
+        if (res && res.error) drawsMsg(res.error, 'err');
+        else { drawsMsg(`Updated — ${res.drawsCount || 0} draws.`, 'ok'); await loadDraws(); }
+      } catch (e) {
+        drawsMsg('Auto-check unavailable (deploy the crs-refresh function). Add manually. ' + (e.message || ''), 'err');
+      } finally { $('drawsCheckNow').disabled = false; }
+    });
+
+    $('drawsAddToggle').addEventListener('click', () => $('drawsForm').classList.toggle('hidden'));
+    $('dfCancel').addEventListener('click', () => $('drawsForm').classList.add('hidden'));
+    $('dfSave').addEventListener('click', async () => {
+      const draw_number = parseInt($('dfNum').value, 10);
+      const draw_date = $('dfDate').value;
+      if (!Number.isInteger(draw_number) || !draw_date) { drawsMsg('Draw # and date are required.', 'err'); return; }
+      const rec = {
+        draw_number, draw_date,
+        round_type: $('dfType').value.trim() || null,
+        invitations: $('dfInv').value ? parseInt($('dfInv').value, 10) : null,
+        crs_cutoff: $('dfCrs').value ? parseInt($('dfCrs').value, 10) : null,
+      };
+      $('dfSave').disabled = true;
+      drawsMsg('Saving…', '');
+      try {
+        await DB.drawUpsert(rec);
+        drawsMsg(`Saved draw #${draw_number}.`, 'ok');
+        ['dfNum', 'dfType', 'dfInv', 'dfCrs'].forEach(id => $(id).value = '');
+        $('drawsForm').classList.add('hidden');
+        await loadDraws();
+      } catch (e) {
+        drawsMsg('Save failed: ' + (e.message || ''), 'err');
+      } finally { $('dfSave').disabled = false; }
+    });
 
     // ---- route: no session → sign in on the picker page ----
     function showLogin() { window.location.replace('index.html'); }
