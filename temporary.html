@@ -645,7 +645,11 @@
       try {
         const res = await DB.crsRefresh();
         if (res && res.error) drawsMsg(res.error, 'err');
-        else { drawsMsg(`Updated — ${res.drawsCount || 0} draws.`, 'ok'); await loadDraws(); }
+        else {
+          const dbg = !res.drawsCount && res.drawsInfo ? ' · debug: ' + JSON.stringify(res.drawsInfo).slice(0, 400) : '';
+          drawsMsg(`Updated — ${res.drawsCount || 0} draws.${dbg}`, res.drawsCount ? 'ok' : 'err');
+          await loadDraws();
+        }
       } catch (e) {
         drawsMsg('Auto-check unavailable (deploy the crs-refresh function). Add manually. ' + (e.message || ''), 'err');
       } finally { $('drawsCheckNow').disabled = false; }
