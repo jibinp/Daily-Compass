@@ -70,12 +70,12 @@ Deno.serve(async (req) => {
     let drawsCount = 0;
     let drawsInfo: unknown = null;
     try {
-      const draws = parseDrawsJson(await fetchJson(DRAWS_JSON));
-      if (draws.length) {
-        const { error: de } = await supabase.from("crs_draws").upsert(draws, { onConflict: "draw_number" });
+      const dj = parseDrawsJson(await fetchJson(DRAWS_JSON));
+      if (dj.draws.length) {
+        const { error: de } = await supabase.from("crs_draws").upsert(dj.draws, { onConflict: "draw_number" });
         if (de) drawsInfo = "DB upsert (draws) failed: " + de.message;
-        else drawsCount = draws.length;
-      } else drawsInfo = "JSON parsed but 0 rounds found";
+        else drawsCount = dj.draws.length;
+      } else drawsInfo = dj.diag;
     } catch (e) {
       drawsInfo = "draws failed: " + String((e as Error)?.message ?? e);
     }
@@ -157,10 +157,24 @@ async function fetchJson(url: string): Promise<string> {
   throw new Error("json fetch failed — " + last);
 }
 
+// Find the rounds array wherever it lives in the JSON.
+function findRounds(obj: any): any[] | null {
+  if (Array.isArray(obj)) return obj;
+  if (Array.isArray(obj?.rounds)) return obj.rounds;
+  for (const v of Object.values(obj ?? {})) {
+    if (Array.isArray(v) && v.length && typeof v[0] === "object" && v[0] &&
+      ("drawNumber" in v[0] || "drawDate" in v[0] || "drawNumberURL" in v[0])) return v as any[];
+  }
+  return null;
+}
+
 // IRCC ee_rounds JSON → draws. Fields: drawNumber, drawDate, drawName, drawSize, drawCRS.
 function parseDrawsJson(text: string) {
-  const obj = JSON.parse(text);
-  const rounds = Array.isArray(obj?.rounds) ? obj.rounds : [];
+  let obj: any;
+  try { obj = JSON.parse(text); } catch (e) { return { draws: [], diag: { parseError: String((e as Error).message), head: text.slice(0, 200) } }; }
+  const rounds = findRounds(obj);
+  if (!rounds) return { draws: [], diag: { topKeys: Object.keys(obj ?? {}), head: JSON.stringify(obj).slice(0, 300) } };
+
   const seen = new Map<number, unknown>();
   const toInt = (v: unknown) => parseInt(String(v ?? "").replace(/[^\d]/g, ""), 10);
   for (const r of rounds) {
@@ -175,7 +189,8 @@ function parseDrawsJson(text: string) {
       crs_cutoff: toInt(r.drawCRS) || null,
     });
   }
-  return [...seen.values()];
+  const draws = [...seen.values()];
+  return { draws, diag: { roundCount: rounds.length, firstKeys: rounds[0] ? Object.keys(rounds[0]) : [], parsed: draws.length } };
 }
 
 function toISODate(s: string): string | null {
