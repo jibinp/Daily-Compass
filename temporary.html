@@ -307,7 +307,8 @@
             <label class="muted-note" for="dfDate">Date</label>
             <input type="date" id="dfDate" />
             <label class="muted-note" for="dfType">Round type / category</label>
-            <input type="text" id="dfType" placeholder="e.g. Provincial Nominee Program" />
+            <input type="text" id="dfType" list="drawTypes" placeholder="Type or pick…" />
+            <datalist id="drawTypes"></datalist>
             <label class="muted-note" for="dfInv">Invitations issued</label>
             <input type="number" id="dfInv" inputmode="numeric" />
             <label class="muted-note" for="dfCrs">CRS cutoff</label>
@@ -625,6 +626,7 @@
       const years = [...new Set(drawsRows.map(r => (r.draw_date || '').slice(0, 4)).filter(Boolean))].sort().reverse();
       $('drawsCat').innerHTML = '<option value="">All categories</option>' + cats.map(c => `<option>${c}</option>`).join('');
       $('drawsYear').innerHTML = '<option value="">All years</option>' + years.map(y => `<option>${y}</option>`).join('');
+      $('drawTypes').innerHTML = cats.map(c => `<option value="${c.replace(/"/g, '&quot;')}"></option>`).join('');   // Add-form autocomplete
     }
     async function loadDraws() { drawsRows = await DB.drawsAll(); fillDrawFilters(); renderDrawsTable(); }
     ['drawsSearch', 'drawsCat', 'drawsYear'].forEach(id => $(id).addEventListener('input', renderDrawsTable));
