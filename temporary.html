@@ -204,6 +204,13 @@
     .draws-table th, .draws-table td { padding: 7px 10px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
     .draws-table th { color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--card); cursor: pointer; user-select: none; }
     .draws-table th:hover { color: var(--text); }
+    .draws-filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 4px; }
+    .draws-filters input, .draws-filters select {
+      background: var(--field); border: 1px solid var(--border); color: var(--text);
+      border-radius: 8px; padding: 6px 9px; font-size: 0.82rem; color-scheme: dark;
+    }
+    .draws-filters input { flex: 1; min-width: 130px; }
+    .draws-filters input:focus, .draws-filters select:focus { outline: none; border-color: var(--accent); }
     .draws-table td.cat { white-space: normal; min-width: 190px; }
     .draws-table td.n { text-align: right; font-variant-numeric: tabular-nums; }
     .draws-table td.crs { text-align: right; font-variant-numeric: tabular-nums; color: var(--accent); font-weight: 600; }
@@ -293,6 +300,12 @@
             <button class="mini-btn ghost" id="drawsAddToggle">＋ Add draw</button>
           </div>
           <div id="drawsMsg" class="crs-msg"></div>
+
+          <div class="draws-filters">
+            <input type="search" id="drawsSearch" placeholder="Search category…" />
+            <select id="drawsCat"><option value="">All categories</option></select>
+            <select id="drawsYear"><option value="">All years</option></select>
+          </div>
           <div id="drawsMeta" class="muted-note"></div>
 
           <div class="table-wrap">
@@ -576,26 +589,45 @@
     let drawsSort = { col: 'draw_number', dir: -1 };   // -1 desc, 1 asc
     const DRAW_COLS = [['draw_number', '#'], ['draw_date', 'Date'], ['round_type', 'Category'], ['crs_cutoff', 'CRS'], ['invitations', 'ITAs']];
 
+    function filteredDraws() {
+      const q = ($('drawsSearch').value || '').toLowerCase();
+      const cat = $('drawsCat').value, yr = $('drawsYear').value;
+      return drawsRows.filter(r =>
+        (!q || (r.round_type || '').toLowerCase().includes(q)) &&
+        (!cat || r.round_type === cat) &&
+        (!yr || (r.draw_date || '').startsWith(yr)));
+    }
     function renderDrawsTable() {
       const t = $('drawsTable');
-      if (!drawsRows.length) { t.innerHTML = '<tbody><tr><td>No draws yet.</td></tr></tbody>'; $('drawsMeta').textContent = ''; return; }
+      if (!drawsRows.length) {
+        t.innerHTML = '<tbody><tr><td>No draws. Run crs_draws.sql + seed, or use “Add draw”.</td></tr></tbody>';
+        $('drawsMeta').textContent = ''; return;
+      }
       const { col, dir } = drawsSort;
-      const sorted = [...drawsRows].sort((a, b) => {
+      const strCol = col === 'round_type' || col === 'draw_date';   // dates sort lexically (ISO)
+      const rows = filteredDraws().sort((a, b) => {
         let x = a[col], y = b[col];
-        if (col === 'round_type') { x = (x || '').toLowerCase(); y = (y || '').toLowerCase(); return x < y ? -dir : x > y ? dir : 0; }
+        if (strCol) { x = (x ?? '').toString().toLowerCase(); y = (y ?? '').toString().toLowerCase(); return x < y ? -dir : x > y ? dir : 0; }
         return ((x ?? 0) - (y ?? 0)) * dir;
       });
       const arrow = c => col === c ? (dir > 0 ? ' ▲' : ' ▼') : '';
       const head = '<thead><tr>' + DRAW_COLS.map(([k, l]) => `<th data-col="${k}">${l}${arrow(k)}</th>`).join('') + '</tr></thead>';
-      const body = sorted.map(r =>
+      const body = rows.map(r =>
         `<tr><td class="n">${r.draw_number}</td><td>${fmtDate(r.draw_date)}</td>` +
         `<td class="cat">${r.round_type || '—'}</td><td class="crs">${num(r.crs_cutoff)}</td><td class="n">${num(r.invitations)}</td></tr>`
-      ).join('');
+      ).join('') || '<tr><td colspan="5">No draws match the filter.</td></tr>';
       t.innerHTML = head + '<tbody>' + body + '</tbody>';
       const latest = drawsRows.reduce((a, b) => (b.draw_number > a.draw_number ? b : a));
-      $('drawsMeta').innerHTML = `${drawsRows.length} draws · latest #${latest.draw_number} ${fmtDate(latest.draw_date)} (CRS ${num(latest.crs_cutoff)})`;
+      $('drawsMeta').innerHTML = `${rows.length} of ${drawsRows.length} draws · latest #${latest.draw_number} ${fmtDate(latest.draw_date)} (CRS ${num(latest.crs_cutoff)})`;
     }
-    async function loadDraws() { drawsRows = await DB.drawsAll(); renderDrawsTable(); }
+    function fillDrawFilters() {
+      const cats = [...new Set(drawsRows.map(r => r.round_type).filter(Boolean))].sort();
+      const years = [...new Set(drawsRows.map(r => (r.draw_date || '').slice(0, 4)).filter(Boolean))].sort().reverse();
+      $('drawsCat').innerHTML = '<option value="">All categories</option>' + cats.map(c => `<option>${c}</option>`).join('');
+      $('drawsYear').innerHTML = '<option value="">All years</option>' + years.map(y => `<option>${y}</option>`).join('');
+    }
+    async function loadDraws() { drawsRows = await DB.drawsAll(); fillDrawFilters(); renderDrawsTable(); }
+    ['drawsSearch', 'drawsCat', 'drawsYear'].forEach(id => $(id).addEventListener('input', renderDrawsTable));
 
     $('drawsTable').addEventListener('click', e => {
       const th = e.target.closest('th[data-col]'); if (!th) return;
