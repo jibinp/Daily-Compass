@@ -104,15 +104,17 @@ const stripTags = (s: string) =>
 const normBand = (s: string) => s.replace(/[‒-―−]/g, "-").replace(/\s+/g, "");
 
 function parse(doc: string) {
-  // Heading (HTML or markdown): "... distribution of candidates in the pool as of January 19, 2026"
-  const hm = doc.match(/distribution of candidates in the pool as of[\s:\-]*([A-Za-z]+\.?\s+\d{1,2},?\s+\d{4})/i);
-  if (!hm) return null;
-  const pool_date = toISODate(hm[1]);
+  const idx = doc.search(/distribution of candidates in the pool as of/i);
+  if (idx < 0) return null;
+  // Date may be wrapped in tags after "as of" — strip tags in a window, then read it.
+  const win = stripTags(doc.slice(idx, idx + 260));
+  const dm = win.match(/as of\s*[:\-]?\s*([A-Za-z]+\.?\s+\d{1,2},?\s+\d{4}|\d{1,2}\s+[A-Za-z]+\.?,?\s+\d{4})/i);
+  const pool_date = dm ? toISODate(dm[1]) : null;
   if (!pool_date) return null;
 
   // Region = from the heading to the next <h2> (the distribution section may hold
   // MORE THAN ONE table: a summary table + a detailed sub-band table).
-  const after = doc.slice(hm.index ?? 0);
+  const after = doc.slice(idx);
   const nextH2 = after.slice(80).search(/<h2[\s>]/i);
   const region = nextH2 > 0 ? after.slice(0, nextH2 + 80) : after.slice(0, 40000);
 
