@@ -27,7 +27,7 @@ const hasTable = (h: string) => /distribution of candidates in the pool as of/i.
 // canada.ca (Akamai) resets Deno's HTTP/2 stream. Try direct over HTTP/1.1, then
 // server-side proxies (which reach canada.ca over h1). Return the first response
 // that actually contains the distribution section.
-async function fetchHtml(): Promise<string> {
+async function fetchHtml(): Promise<{ html: string; via: string }> {
   const t = () => AbortSignal.timeout(15000);      // fail fast, try next
   const attempts: Array<[string, () => Promise<string>]> = [
     ["direct", async () => {
@@ -44,7 +44,7 @@ async function fetchHtml(): Promise<string> {
   for (const [name, a] of attempts) {
     try {
       const html = await a();
-      if (hasTable(html)) { console.log(`fetch ok via ${name} (${html.length} bytes)`); return html; }
+      if (hasTable(html)) { console.log(`fetch ok via ${name} (${html.length} bytes)`); return { html, via: name }; }
       last = `${name}: got ${html.length} bytes, no distribution section`;
       console.log(last);
     } catch (e) {
@@ -58,30 +58,39 @@ async function fetchHtml(): Promise<string> {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   try {
-    const parsed = parse(await fetchHtml());
+    const { html, via } = await fetchHtml();
+    // Diagnostics: is the top-level summary even in what we fetched?
+    const s601 = html.search(/601[\s\S]{0,10}1200/);
+    const snippet = s601 >= 0 ? stripTags(html.slice(s601 - 40, s601 + 340)) : "(no 601…1200 in payload)";
+    const diag = { via, htmlLen: html.length, tables: (html.match(/<table/gi) ?? []).length, has601: s601 >= 0 };
+    console.log("diag", JSON.stringify(diag), "snippet:", snippet);
+
+    const parsed = parse(html);
     if (!parsed) {
-      return json({ error: "Could not locate the distribution table (IRCC layout may have changed)." }, 200);
-    }
-    if (!parsed.distribution.length) {
-      return json({ error: "Table found but no known CRS bands matched.", pool_date: parsed.pool_date, sawLabels: parsed.sawLabels }, 200);
+      return json({ error: "Could not locate the distribution table.", ...diag, snippet }, 200);
     }
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
-    const { error } = await supabase.from("crs_pool").upsert({
-      pool_date: parsed.pool_date,
-      distribution: parsed.distribution,
-      total: parsed.total,
-      source_url: IRCC_URL,
-      fetched_at: new Date().toISOString(),
-    }, { onConflict: "pool_date" });
-    if (error) return json({ error: "DB upsert failed: " + error.message }, 200);
+    if (parsed.distribution.length) {
+      const { error } = await supabase.from("crs_pool").upsert({
+        pool_date: parsed.pool_date,
+        distribution: parsed.distribution,
+        total: parsed.total,
+        source_url: IRCC_URL,
+        fetched_at: new Date().toISOString(),
+      }, { onConflict: "pool_date" });
+      if (error) return json({ error: "DB upsert failed: " + error.message }, 200);
+    }
 
     console.log("matched:", parsed.distribution.map((d) => d.range).join(", "));
     console.log("saw:", parsed.sawLabels.join(" | "));
-    return json({ pool_date: parsed.pool_date, rows: parsed.distribution.length, total: parsed.total, saw: parsed.sawLabels });
+    return json({
+      pool_date: parsed.pool_date, rows: parsed.distribution.length, total: parsed.total,
+      saw: parsed.sawLabels, ...diag, snippet,
+    });
   } catch (e) {
     return json({ error: "Function error: " + String((e as Error)?.message ?? e) }, 200);
   }
