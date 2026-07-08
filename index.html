@@ -132,6 +132,22 @@
       z-index: 105; opacity: 0; pointer-events: none; transition: opacity 0.22s;
     }
     .sidebar-backdrop.open { opacity: 1; pointer-events: auto; }
+    /* ---- tree nav (explorer style) ---- */
+    .tree { display: flex; flex-direction: column; gap: 1px; margin-top: 4px; }
+    .tnode {
+      display: flex; align-items: center; gap: 6px;
+      padding: 6px 8px; border-radius: 6px;
+      color: var(--text); text-decoration: none; font-size: 0.9rem;
+      cursor: pointer; white-space: nowrap; user-select: none;
+    }
+    .tnode:hover { background: var(--field); }
+    .tnode.active { background: var(--field); color: var(--accent); font-weight: 600; }
+    .tnode.soon { opacity: 0.5; pointer-events: none; }
+    .tw { width: 1em; font-size: 0.62rem; color: var(--muted); display: inline-block; text-align: center; transition: transform 0.15s; }
+    .tw-sp { width: 1em; display: inline-block; }
+    .tchildren { padding-left: 14px; }
+    .tchildren.collapsed { display: none; }
+    .tfolder.collapsed .tw { transform: rotate(-90deg); }
   </style>
 </head>
 <body>
@@ -142,10 +158,19 @@
       <span class="sidebar-title">🧭 Daily Compass</span>
       <button class="sidebar-close" id="navClose" aria-label="Close menu">✕</button>
     </div>
-    <a class="nav-link active" href="index.html"><span class="nav-icon">🏠</span>Home</a>
-    <a class="nav-link" href="health-log.html"><span class="nav-icon">🩺</span>Health Log</a>
-    <a class="nav-link" href="temporary.html"><span class="nav-icon">🗓️</span>Temporary</a>
-    <a class="nav-link soon" href="#"><span class="nav-icon">📊</span>Stats<span class="nav-soon-tag">Soon</span></a>
+    <div class="tree">
+      <a class="tnode active" href="index.html"><span class="tw-sp"></span>🏠 Home</a>
+      <a class="tnode" href="health-log.html"><span class="tw-sp"></span>🩺 Health Log</a>
+      <div class="tfolder tnode" data-group="g-temp"><span class="tw">▾</span>🗓️ Temporary</div>
+      <div class="tchildren" id="g-temp">
+        <a class="tnode" href="temporary.html"><span class="tw-sp"></span>Overview</a>
+        <div class="tfolder tnode" data-group="g-pr"><span class="tw">▾</span>🇨🇦 Canadian PR</div>
+        <div class="tchildren" id="g-pr">
+          <a class="tnode" href="temporary.html"><span class="tw-sp"></span>📈 CRS Pool</a>
+        </div>
+      </div>
+      <a class="tnode soon"><span class="tw-sp"></span>📊 Stats</a>
+    </div>
   </nav>
 
   <div class="topbar">
@@ -239,6 +264,13 @@
     $('navClose').addEventListener('click', closeNav);
     $('navBackdrop').addEventListener('click', closeNav);
     document.addEventListener('keydown', e => { if (e.key === 'Escape') closeNav(); });
+    // tree folder expand/collapse
+    $('sidebar').addEventListener('click', e => {
+      const f = e.target.closest('.tfolder'); if (!f) return;
+      const g = document.getElementById(f.dataset.group);
+      if (g) g.classList.toggle('collapsed');
+      f.classList.toggle('collapsed');
+    });
 
     $('today').textContent = new Date().toLocaleDateString(undefined,
       { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
