@@ -359,10 +359,14 @@
     document.addEventListener('keydown', e => { if (e.key === 'Escape') closeNav(); });
     // tree folder expand/collapse
     $('sidebar').addEventListener('click', e => {
-      const f = e.target.closest('.tfolder'); if (!f) return;
-      const g = document.getElementById(f.dataset.group);
-      if (g) g.classList.toggle('collapsed');
-      f.classList.toggle('collapsed');
+      const f = e.target.closest('.tfolder');
+      if (f) {
+        const g = document.getElementById(f.dataset.group);
+        if (g) g.classList.toggle('collapsed');
+        f.classList.toggle('collapsed');
+        return;
+      }
+      if (e.target.closest('a.tnode')) closeNav();   // leaf link → close drawer
     });
 
     // ---- in-page tabs ----
@@ -372,6 +376,11 @@
     }
     document.querySelectorAll('.tab:not(.soon)').forEach(btn => {
       btn.addEventListener('click', () => { selectTab(btn.dataset.tab); location.hash = btn.dataset.tab; });
+    });
+    // tree links use #pool / #draws on the same page — switch tab on hash change
+    window.addEventListener('hashchange', () => {
+      const h = location.hash.replace('#', '');
+      if (h === 'draws' || h === 'pool') selectTab(h);
     });
 
     $('logoutBtn').addEventListener('click', async () => { await DB.signOut(); });
