@@ -425,11 +425,8 @@
         if (res && res.error) {                       // function ran but couldn't parse
           crsMsg(res.error + (res.sawLabels ? ' Saw: ' + res.sawLabels.slice(0, 8).join(', ') : ''), 'err');
         } else if (res && res.pool_date) {
-          console.log('crs-refresh result', res);
-          const diag = res.rows < 17
-            ? ` [via=${res.via} tables=${res.tables} has601=${res.has601}] saw: ${(res.saw||[]).join(' | ')} || snippet: ${res.snippet||''}`
-            : '';
-          crsMsg(`Updated: pool as of ${fmtDate(res.pool_date)} (${res.rows}/17 bands).${diag}`, res.rows < 17 ? 'err' : 'ok');
+          const partial = res.rows < 17 && res.saw ? ' — only matched: ' + res.saw.join(', ') : '';
+          crsMsg(`Updated: pool as of ${fmtDate(res.pool_date)} (${res.rows}/17 bands).${partial}`, res.rows < 17 ? 'err' : 'ok');
           await loadCrs();
         } else {
           crsMsg('Checked — no data returned.', 'err');
