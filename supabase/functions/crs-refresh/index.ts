@@ -52,11 +52,11 @@ Deno.serve(async (req) => {
       source_url: IRCC_URL,
       fetched_at: new Date().toISOString(),
     }, { onConflict: "pool_date" });
-    if (error) return json({ error: error.message }, 500);
+    if (error) return json({ error: "DB upsert failed: " + error.message }, 200);
 
     return json({ pool_date: parsed.pool_date, rows: parsed.distribution.length, total: parsed.total });
   } catch (e) {
-    return json({ error: String((e as Error)?.message ?? e) }, 500);
+    return json({ error: "Function error: " + String((e as Error)?.message ?? e) }, 200);
   }
 });
 

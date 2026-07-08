@@ -289,7 +289,10 @@
       },
       async crsRefresh() {                       // trigger the server-side IRCC fetch
         const { data, error } = await supabase.functions.invoke('crs-refresh');
-        if (error) throw error;
+        if (error) {
+          try { return await error.context.json(); } catch { /* fall through */ }
+          throw error;
+        }
         return data;
       },
     };
