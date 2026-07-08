@@ -12,8 +12,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const POOL_URL =
   "https://www.canada.ca/en/immigration-refugees-citizenship/services/immigrate-canada/express-entry/rounds-invitations.html";
-const DRAWS_URL =
-  "https://www.canada.ca/en/immigration-refugees-citizenship/corporate/mandate/policies-operational-instructions-agreements/ministerial-instructions/express-entry-rounds.html";
+// IRCC publishes the rounds (and per-round pool distribution) as JSON — the feed
+// the express-entry-rounds page renders. Far more reliable than scraping HTML.
+const DRAWS_JSON = "https://www.canada.ca/content/dam/ircc/documents/json/ee_rounds_123_en.json";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -65,23 +66,18 @@ Deno.serve(async (req) => {
     }, { onConflict: "pool_date" });
     if (error) return json({ error: "DB upsert (pool) failed: " + error.message }, 200);
 
-    // ---- draws (separate page) ----
+    // ---- draws (from the IRCC JSON feed) ----
     let drawsCount = 0;
     let drawsInfo: unknown = null;
     try {
-      const drawsHtml = await fetchDoc(DRAWS_URL, (h) => parseDraws(h).draws.length > 0);
-      const { draws } = parseDraws(drawsHtml);
+      const draws = parseDrawsJson(await fetchJson(DRAWS_JSON));
       if (draws.length) {
         const { error: de } = await supabase.from("crs_draws").upsert(draws, { onConflict: "draw_number" });
         if (de) drawsInfo = "DB upsert (draws) failed: " + de.message;
         else drawsCount = draws.length;
-      }
+      } else drawsInfo = "JSON parsed but 0 rounds found";
     } catch (e) {
-      // draws are best-effort; include a sample so the parser can be tuned
-      try {
-        const dh = await fetchDoc(DRAWS_URL, () => true);
-        drawsInfo = { error: String((e as Error)?.message ?? e), sample: parseDraws(dh).sample };
-      } catch (e2) { drawsInfo = "draws fetch failed: " + String((e2 as Error)?.message ?? e2); }
+      drawsInfo = "draws failed: " + String((e as Error)?.message ?? e);
     }
 
     return json({ pool_date: parsed.pool_date, rows: parsed.distribution.length, total: parsed.total, drawsCount, drawsInfo });
@@ -141,26 +137,45 @@ function parsePool(doc: string) {
   return { pool_date, distribution, total, sawLabels };
 }
 
-// Express Entry draws (rounds of invitations): #, Date, Round type, Invitations, CRS.
-function parseDraws(doc: string) {
-  const dateRe = /([A-Za-z]+\.?\s+\d{1,2},?\s+\d{4})/;
-  const isInt = (s: string) => /^\d[\d,]*$/.test(s.trim());
-  const dated = extractRows(doc).filter((c) => c.length >= 3 && c.some((x) => dateRe.test(x)));
-  const seen = new Map<number, unknown>();
-  for (const cells of dated) {
-    const di = cells.findIndex((c) => dateRe.test(c));
-    if (di < 1) continue;                                       // draw number must precede the date
-    const draw_number = parseInt((cells[0] || "").replace(/[,\s]/g, ""), 10);
-    if (!Number.isInteger(draw_number)) continue;
-    const iso = toISODate((cells[di].match(dateRe) || [])[1] || "");
-    if (!iso) continue;
-    const after = cells.slice(di + 1);
-    const nums = after.filter(isInt).map((c) => parseInt(c.replace(/[,\s]/g, ""), 10));
-    if (nums.length < 2) continue;
-    const round_type = (after.find((c) => c.trim() && !isInt(c)) || "").trim();
-    seen.set(draw_number, { draw_number, draw_date: iso, round_type, invitations: nums[nums.length - 2], crs_cutoff: nums[nums.length - 1] });
+// Fetch a JSON asset (validate JSON.parse). Skip jina (it markdownifies JSON).
+async function fetchJson(url: string): Promise<string> {
+  const t = () => AbortSignal.timeout(15000);
+  const tries: Array<[string, () => Promise<string>]> = [
+    ["direct", async () => {
+      let client: unknown;
+      try { client = (Deno as unknown as { createHttpClient?: (o: unknown) => unknown }).createHttpClient?.({ http2: false }); } catch { /* off */ }
+      return await (await fetch(url, { headers: HEADERS, signal: t(), ...(client ? { client } : {}) } as RequestInit)).text();
+    }],
+    ["allorigins", async () => (await fetch("https://api.allorigins.win/raw?url=" + encodeURIComponent(url), { headers: HEADERS, signal: t() })).text()],
+    ["corsproxy", async () => (await fetch("https://corsproxy.io/?url=" + encodeURIComponent(url), { headers: HEADERS, signal: t() })).text()],
+  ];
+  let last = "";
+  for (const [name, fn] of tries) {
+    try { const txt = await fn(); JSON.parse(txt); console.log(`json ok via ${name} (${txt.length} bytes)`); return txt; }
+    catch (e) { last = `${name}: ${String((e as Error)?.message ?? e)}`; console.error(last); }
   }
-  return { draws: [...seen.values()], sample: dated.slice(0, 3) };
+  throw new Error("json fetch failed — " + last);
+}
+
+// IRCC ee_rounds JSON → draws. Fields: drawNumber, drawDate, drawName, drawSize, drawCRS.
+function parseDrawsJson(text: string) {
+  const obj = JSON.parse(text);
+  const rounds = Array.isArray(obj?.rounds) ? obj.rounds : [];
+  const seen = new Map<number, unknown>();
+  const toInt = (v: unknown) => parseInt(String(v ?? "").replace(/[^\d]/g, ""), 10);
+  for (const r of rounds) {
+    const draw_number = toInt(r.drawNumber);
+    if (!Number.isInteger(draw_number)) continue;
+    const draw_date = toISODate(String(r.drawDate || r.drawDateFull || ""));
+    if (!draw_date) continue;
+    seen.set(draw_number, {
+      draw_number, draw_date,
+      round_type: (r.drawName || "").toString().trim() || null,
+      invitations: toInt(r.drawSize) || null,
+      crs_cutoff: toInt(r.drawCRS) || null,
+    });
+  }
+  return [...seen.values()];
 }
 
 function toISODate(s: string): string | null {
