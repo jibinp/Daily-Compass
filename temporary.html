@@ -492,8 +492,10 @@
           crsMsg(res.error + (res.sawLabels ? ' Saw: ' + res.sawLabels.slice(0, 8).join(', ') : ''), 'err');
         } else if (res && res.pool_date) {
           const partial = res.rows < 17 && res.saw ? ' — only matched: ' + res.saw.join(', ') : '';
-          crsMsg(`Updated: pool as of ${fmtDate(res.pool_date)} (${res.rows}/17 bands).${partial}`, res.rows < 17 ? 'err' : 'ok');
+          const dr = res.drawsCount ? ` · ${res.drawsCount} draws` : '';
+          crsMsg(`Updated: pool as of ${fmtDate(res.pool_date)} (${res.rows}/17 bands)${dr}.${partial}`, res.rows < 17 ? 'err' : 'ok');
           await loadCrs();
+          try { await loadDraws(); } catch { /* draws table may not exist yet */ }
         } else {
           crsMsg('Checked — no data returned.', 'err');
         }

@@ -79,9 +79,18 @@ Deno.serve(async (req) => {
       source_url: IRCC_URL,
       fetched_at: new Date().toISOString(),
     }, { onConflict: "pool_date" });
-    if (error) return json({ error: "DB upsert failed: " + error.message }, 200);
+    if (error) return json({ error: "DB upsert (pool) failed: " + error.message }, 200);
 
-    return json({ pool_date: parsed.pool_date, rows: parsed.distribution.length, total: parsed.total, saw: parsed.sawLabels });
+    // draws (rounds of invitations) from the same page
+    const draws = parseDraws(html);
+    let drawsCount = 0;
+    if (draws.length) {
+      const { error: de } = await supabase.from("crs_draws").upsert(draws, { onConflict: "draw_number" });
+      if (de) return json({ error: "DB upsert (draws) failed: " + de.message, pool_date: parsed.pool_date, rows: parsed.distribution.length }, 200);
+      drawsCount = draws.length;
+    }
+
+    return json({ pool_date: parsed.pool_date, rows: parsed.distribution.length, total: parsed.total, drawsCount, saw: parsed.sawLabels });
   } catch (e) {
     return json({ error: "Function error: " + String((e as Error)?.message ?? e) }, 200);
   }
@@ -114,23 +123,7 @@ function parse(doc: string) {
   const pool_date = dm ? toISODate(dm[1]) : null;
   if (!pool_date) return null;
 
-  // Scan EVERY table in the document — summary and detailed sub-band tables can
-  // live in different sections. The KNOWN-band filter below keeps only the
-  // distribution rows, so unrelated tables (draw history etc.) are ignored.
-  let rows: string[][] = [];
-  const tables = doc.match(/<table[\s\S]*?<\/table>/gi);
-  if (tables && tables.length) {
-    for (const tbl of tables) {
-      for (const tr of tbl.match(/<tr[\s\S]*?<\/tr>/gi) ?? []) {
-        rows.push((tr.match(/<t[hd](?:\s[^>]*)?>([\s\S]*?)<\/t[hd]>/gi) ?? []).map(stripTags));
-      }
-    }
-  } else {
-    rows = doc.split("\n")
-      .filter((l) => l.includes("|"))
-      .map((l) => l.split("|").map((c) => stripTags(c)).filter((c) => c !== ""));
-  }
-
+  const rows = extractRows(doc);
   const found = new Map<string, number>();
   const sawLabels: string[] = [];
   for (const cells of rows) {
@@ -145,6 +138,48 @@ function parse(doc: string) {
   const distribution = [...TOP, ...SUB].filter((k) => found.has(k)).map((k) => ({ range: k, count: found.get(k)! }));
   const total = TOP.filter((k) => found.has(k)).reduce((a, k) => a + found.get(k)!, 0) || null;
   return { pool_date, distribution, total, sawLabels };
+}
+
+// All table rows in the document (HTML tables, or markdown pipe lines).
+function extractRows(doc: string): string[][] {
+  const tables = doc.match(/<table[\s\S]*?<\/table>/gi);
+  if (tables && tables.length) {
+    const rows: string[][] = [];
+    for (const tbl of tables) {
+      for (const tr of tbl.match(/<tr[\s\S]*?<\/tr>/gi) ?? []) {
+        rows.push((tr.match(/<t[hd](?:\s[^>]*)?>([\s\S]*?)<\/t[hd]>/gi) ?? []).map(stripTags));
+      }
+    }
+    return rows;
+  }
+  return doc.split("\n")
+    .filter((l) => l.includes("|"))
+    .map((l) => l.split("|").map((c) => stripTags(c)).filter((c) => c !== ""));
+}
+
+// Express Entry draws (rounds of invitations): #, Date, Round type, Invitations, CRS.
+function parseDraws(doc: string) {
+  const dateRe = /([A-Za-z]+\.?\s+\d{1,2},?\s+\d{4})/;
+  const isInt = (s: string) => /^\d[\d,]*$/.test(s.trim());
+  const seen = new Map<number, unknown>();
+  for (const cells of extractRows(doc)) {
+    if (cells.length < 4) continue;
+    const di = cells.findIndex((c) => dateRe.test(c));
+    if (di < 1) continue;                                   // draw number must precede the date
+    const draw_number = parseInt((cells[0] || "").replace(/[,\s]/g, ""), 10);
+    if (!Number.isInteger(draw_number)) continue;
+    const iso = toISODate((cells[di].match(dateRe) || [])[1] || "");
+    if (!iso) continue;
+    const after = cells.slice(di + 1);
+    const nums = after.filter(isInt).map((c) => parseInt(c.replace(/[,\s]/g, ""), 10));
+    if (nums.length < 2) continue;
+    const round_type = (after.find((c) => c.trim() && !isInt(c)) || "").trim();
+    seen.set(draw_number, {
+      draw_number, draw_date: iso, round_type,
+      invitations: nums[nums.length - 2], crs_cutoff: nums[nums.length - 1],
+    });
+  }
+  return [...seen.values()];
 }
 
 function toISODate(s: string): string | null {
