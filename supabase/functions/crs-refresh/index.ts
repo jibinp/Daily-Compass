@@ -90,19 +90,32 @@ Deno.serve(async (req) => {
     }, { onConflict: "pool_date" });
     if (error) return json({ error: "DB upsert (pool) failed: " + error.message }, 200);
 
-    // ---- draws (from the IRCC JSON feed; URL discovered from the pool/draws pages) ----
+    // ---- draws: try the JSON feed first, fall back to scraping the rounds table ----
     let drawsCount = 0;
     let drawsInfo: unknown = null;
+    let draws: unknown[] = [];
     try {
       const { url: drawsJsonUrl, via } = await discoverDrawsJsonUrl(poolHtml);
       const dj = parseDrawsJson(await fetchJson(drawsJsonUrl));
-      if (dj.draws.length) {
-        const { error: de } = await supabase.from("crs_draws").upsert(dj.draws, { onConflict: "draw_number" });
-        if (de) drawsInfo = "DB upsert (draws) failed: " + de.message;
-        else drawsCount = dj.draws.length;
-      } else drawsInfo = { url: drawsJsonUrl, via, ...dj.diag };
+      if (dj.draws.length) { draws = dj.draws; }
+      else drawsInfo = { source: "json", url: drawsJsonUrl, via, ...dj.diag };
     } catch (e) {
-      drawsInfo = "draws failed: " + String((e as Error)?.message ?? e);
+      drawsInfo = { source: "json", error: String((e as Error)?.message ?? e) };
+    }
+    if (!draws.length) {
+      try {
+        const drawsPageDoc = await fetchDoc(DRAWS_PAGE_URL, (h) => /round type|invitations issued/i.test(h));
+        const dt = parseDrawsTable(drawsPageDoc);
+        if (dt.draws.length) draws = dt.draws;
+        else drawsInfo = { previous: drawsInfo, source: "table", ...dt.diag };
+      } catch (e) {
+        drawsInfo = { previous: drawsInfo, source: "table", error: String((e as Error)?.message ?? e) };
+      }
+    }
+    if (draws.length) {
+      const { error: de } = await supabase.from("crs_draws").upsert(draws, { onConflict: "draw_number" });
+      if (de) drawsInfo = "DB upsert (draws) failed: " + de.message;
+      else drawsCount = draws.length;
     }
 
     return json({ pool_date: parsed.pool_date, rows: parsed.distribution.length, total: parsed.total, drawsCount, drawsInfo });
@@ -170,28 +183,43 @@ function unwrap(obj: any): any {
 const jsonHasRounds = (txt: string) => { try { return !!findRounds(unwrap(JSON.parse(txt))); } catch { return false; } };
 
 // Fetch the JSON, accepting only a response that actually contains the rounds array.
+// On total failure, throw with a log of every attempt (bytes + body snippet) so the
+// real cause is visible instead of just the last one.
 async function fetchJson(url: string): Promise<string> {
   const t = () => AbortSignal.timeout(15000);
   const tries: Array<[string, () => Promise<string>]> = [
     ["direct", async () => {
       let client: unknown;
       try { client = (Deno as unknown as { createHttpClient?: (o: unknown) => unknown }).createHttpClient?.({ http2: false }); } catch { /* off */ }
-      return await (await fetch(url, { headers: HEADERS, signal: t(), ...(client ? { client } : {}) } as RequestInit)).text();
+      const r = await fetch(url, { headers: HEADERS, signal: t(), ...(client ? { client } : {}) } as RequestInit);
+      return `[${r.status}] ` + await r.text();
     }],
-    ["allorigins-raw", async () => (await fetch("https://api.allorigins.win/raw?url=" + encodeURIComponent(url), { headers: HEADERS, signal: t() })).text()],
-    ["allorigins-get", async () => (await fetch("https://api.allorigins.win/get?url=" + encodeURIComponent(url), { headers: HEADERS, signal: t() })).text()],
-    ["corsproxy", async () => (await fetch("https://corsproxy.io/?url=" + encodeURIComponent(url), { headers: HEADERS, signal: t() })).text()],
+    ["allorigins-raw", async () => {
+      const r = await fetch("https://api.allorigins.win/raw?url=" + encodeURIComponent(url), { headers: HEADERS, signal: t() });
+      return `[${r.status}] ` + await r.text();
+    }],
+    ["allorigins-get", async () => {
+      const r = await fetch("https://api.allorigins.win/get?url=" + encodeURIComponent(url), { headers: HEADERS, signal: t() });
+      return `[${r.status}] ` + await r.text();
+    }],
+    ["corsproxy", async () => {
+      const r = await fetch("https://corsproxy.io/?url=" + encodeURIComponent(url), { headers: HEADERS, signal: t() });
+      return `[${r.status}] ` + await r.text();
+    }],
   ];
-  let last = "";
+  const log: string[] = [];
   for (const [name, fn] of tries) {
     try {
-      const txt = await fn();
+      const tagged = await fn();
+      const txt = tagged.replace(/^\[\d+\]\s*/, "");
       if (jsonHasRounds(txt)) { console.log(`json ok via ${name} (${txt.length} bytes)`); return txt; }
-      last = `${name}: ${txt.length} bytes, no rounds`;
-      console.log(last);
-    } catch (e) { last = `${name}: ${String((e as Error)?.message ?? e)}`; console.error(last); }
+      log.push(`${name}: ${tagged.slice(0, 140)}`);
+    } catch (e) {
+      log.push(`${name}: threw ${String((e as Error)?.message ?? e)}`);
+    }
   }
-  throw new Error("json fetch failed — " + last);
+  console.error("fetchJson all attempts:\n" + log.join("\n"));
+  throw new Error("json fetch failed for " + url + " — " + log.join(" | "));
 }
 
 // Find the rounds array wherever it lives in the JSON.
@@ -228,6 +256,45 @@ function parseDrawsJson(text: string) {
   }
   const draws = [...seen.values()];
   return { draws, diag: { roundCount: rounds.length, firstKeys: rounds[0] ? Object.keys(rounds[0]) : [], parsed: draws.length } };
+}
+
+// Parse the draws table by locating its header row (the official column names:
+// #, Date, Round type, Invitations issued, CRS score of lowest-ranked candidate
+// invited) and reading columns by index — sturdier than guessing row shape.
+function parseDrawsTable(doc: string) {
+  const rows = extractRows(doc);
+  const norm = (s: string) => (s || "").toLowerCase().replace(/\s+/g, " ").trim();
+  let headerIdx = -1, col = { num: -1, date: -1, type: -1, inv: -1, crs: -1 };
+  for (let i = 0; i < rows.length; i++) {
+    const cells = rows[i].map(norm);
+    const numI = cells.findIndex((c) => c === "#" || c === "draw" || c === "draw #" || c === "draw number");
+    const dateI = cells.findIndex((c) => c === "date");
+    const typeI = cells.findIndex((c) => c.includes("round type") || c.includes("category"));
+    const invI = cells.findIndex((c) => c.includes("invitations"));
+    const crsI = cells.findIndex((c) => c.includes("crs score") || c === "crs" || c.includes("lowest-ranked"));
+    if (numI >= 0 && dateI >= 0 && invI >= 0 && crsI >= 0) {
+      headerIdx = i; col = { num: numI, date: dateI, type: typeI, inv: invI, crs: crsI };
+      break;
+    }
+  }
+  if (headerIdx < 0) return { draws: [], diag: { headerFound: false, rowSample: rows.slice(0, 5) } };
+
+  const isInt = (s: string) => /^\d[\d,]*$/.test((s || "").trim());
+  const seen = new Map<number, unknown>();
+  for (const cells of rows.slice(headerIdx + 1)) {
+    const numRaw = (cells[col.num] || "").replace(/[,\s]/g, "");
+    const draw_number = parseInt(numRaw, 10);
+    if (!Number.isInteger(draw_number)) continue;
+    const draw_date = toISODate(cells[col.date] || "");
+    if (!draw_date) continue;
+    const invitations = isInt(cells[col.inv]) ? parseInt(cells[col.inv].replace(/[,\s]/g, ""), 10) : null;
+    const crsCell = (cells[col.crs] || "").replace(/[,\s]/g, "");
+    const crs_cutoff = /^\d+$/.test(crsCell) ? parseInt(crsCell, 10) : null;
+    const round_type = col.type >= 0 ? (cells[col.type] || "").trim() || null : null;
+    seen.set(draw_number, { draw_number, draw_date, round_type, invitations, crs_cutoff });
+  }
+  const draws = [...seen.values()];
+  return { draws, diag: { headerFound: true, col, rowsAfterHeader: rows.length - headerIdx - 1, parsed: draws.length } };
 }
 
 function toISODate(s: string): string | null {
