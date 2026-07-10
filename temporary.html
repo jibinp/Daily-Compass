@@ -768,44 +768,86 @@
       $('analysisMeta').innerHTML = `${windows.length + 1} pool snapshots · ${windows.length} windows compared`;
     }
 
+    // Skim order across the FULL 15-band hierarchy (subs replace their parent
+    // group in CRS order) — used when both snapshots in a window have sub data.
+    const FINE_SKIM_ORDER = TOP.flatMap(band => hasSubs[band]
+      ? RANGES.filter(rg => rg.sub && parentOf[rg.r] === band).map(rg => rg.r)
+      : [band]);
+    const hasFineData = bands => FINE_SKIM_ORDER.every(k => !RANGES.find(rg => rg.r === k && rg.sub) || k in bands);
+
+    const bandExpanded = new Set();
     // Per-band: skim each window's total invitations off the top band downward
     // (matches how ITAs are issued — highest CRS first, down to the cutoff),
     // then diff the simulated "expected" band counts against the real snapshot B.
-    function renderBandAnalysis() {
-      const t = $('bandAnalysisTable');
+    // Uses the fine 15-band order when both A and B have sub-band data for a
+    // window, else falls back to the 7 top-level bands (sub rows show "—").
+    let bandResults = [];
+    function computeBandAnalysis() {
       const windows = poolWindows();
-      if (windows.length < 1) {
-        t.innerHTML = '<tbody><tr><td>Need at least 2 pool snapshots.</td></tr></tbody>'; return;
-      }
-      const results = windows.map(({ a, b, windowDraws }) => {
+      bandResults = windows.map(({ a, b, windowDraws }) => {
+        const fine = hasFineData(a.bands);
+        const order = fine ? FINE_SKIM_ORDER : TOP;
         const expected = { ...a.bands };
         for (const d of windowDraws) {
           let remaining = d.invitations || 0;
-          for (const band of TOP) {
+          for (const band of order) {
             if (remaining <= 0) break;
             const take = Math.min(remaining, expected[band] || 0);
             expected[band] = (expected[band] || 0) - take;
             remaining -= take;
           }
         }
+        if (fine) {
+          for (const g of TOP) if (hasSubs[g]) {
+            expected[g] = RANGES.filter(rg => rg.sub && parentOf[rg.r] === g)
+              .reduce((s, rg) => s + (expected[rg.r] || 0), 0);
+          }
+        }
         const delta = {};
-        for (const band of TOP) delta[band] = (b.bands[band] || 0) - (expected[band] || 0);
-        return { a, b, delta };
+        for (const rg of RANGES) {
+          const row = rg.r;
+          const bKnown = row in b.bands;
+          const rowUsable = !rg.sub || fine;   // sub rows only meaningful with fine skim
+          delta[row] = (rowUsable && bKnown) ? (b.bands[row] || 0) - (expected[row] || 0) : null;
+        }
+        return { a, b, delta, fine };
       });
-      const cols = results.slice().reverse();   // most recent window first
+      return windows.length;
+    }
+
+    function renderBandAnalysis() {
+      const t = $('bandAnalysisTable');
+      if (!computeBandAnalysis()) {
+        t.innerHTML = '<tbody><tr><td>Need at least 2 pool snapshots.</td></tr></tbody>'; return;
+      }
+      const cols = bandResults.slice().reverse();   // most recent window first
       const head = '<thead><tr><th>CRS band</th>' +
         cols.map(r => `<th>${fmtShort(r.a.date)} → ${fmtShort(r.b.date)}</th>`).join('') + '</tr></thead>';
-      const body = TOP.map(band => {
+      let body = '';
+      for (const rg of RANGES) {
+        if (rg.sub && !bandExpanded.has(parentOf[rg.r])) continue;
         const cells = cols.map(r => {
-          const v = r.delta[band];
+          const v = r.delta[rg.r];
+          if (v == null) return '<td>—</td>';
           const cls = v > 0 ? 'warn' : v < 0 ? 'good' : '';
           const sign = v > 0 ? '+' : '';
           return `<td class="${cls}">${sign}${num(v)}</td>`;
         }).join('');
-        return `<tr><td>${band}</td>${cells}</tr>`;
-      }).join('');
+        if (!rg.sub && hasSubs[rg.r]) {
+          const open = bandExpanded.has(rg.r);
+          body += `<tr class="grp" data-range="${rg.r}"><td><span class="tw${open ? ' open' : ''}">▶</span>${rg.r}</td>${cells}</tr>`;
+        } else {
+          body += `<tr class="${rg.sub ? 'sub' : ''}"><td>${rg.r}</td>${cells}</tr>`;
+        }
+      }
       t.innerHTML = head + '<tbody>' + body + '</tbody>';
     }
+    $('bandAnalysisTable').addEventListener('click', e => {
+      const tr = e.target.closest('tr.grp'); if (!tr) return;
+      const r = tr.dataset.range;
+      bandExpanded.has(r) ? bandExpanded.delete(r) : bandExpanded.add(r);
+      renderBandAnalysis();
+    });
 
     // ---- route: no session → sign in on the picker page ----
     function showLogin() { window.location.replace('index.html'); }
