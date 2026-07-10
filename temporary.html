@@ -646,7 +646,7 @@
         const res = await DB.crsRefresh();
         if (res && res.error) drawsMsg(res.error, 'err');
         else {
-          const dbg = !res.drawsCount && res.drawsInfo ? ' · debug: ' + JSON.stringify(res.drawsInfo).slice(0, 400) : '';
+          const dbg = !res.drawsCount && res.drawsInfo ? ' · debug: ' + JSON.stringify(res.drawsInfo).slice(0, 1500) : '';
           drawsMsg(`Updated — ${res.drawsCount || 0} draws.${dbg}`, res.drawsCount ? 'ok' : 'err');
           await loadDraws();
         }

@@ -30,7 +30,10 @@ const HEADERS = { "User-Agent": UA, "Accept": "text/html,application/xhtml+xml",
 // Returns the first response for which ok(html) is true. On total failure, throw
 // with EVERY attempt's status/bytes/snippet — not just the last — so the real
 // cause is visible.
-async function fetchDoc(url: string, ok: (h: string) => boolean): Promise<string> {
+// diagPhrases: on failure, search the doc for these and show a snippet around
+// the first hit — reveals whether/where real content landed even if `ok()`
+// (the strict parser) didn't recognize it.
+async function fetchDoc(url: string, ok: (h: string) => boolean, diagPhrases: string[] = []): Promise<string> {
   const t = () => AbortSignal.timeout(20000);
   const attempts: Array<[string, () => Promise<string>]> = [
     // No spoofed browser UA here — jina uses its own fetch internally, and
@@ -56,7 +59,13 @@ async function fetchDoc(url: string, ok: (h: string) => boolean): Promise<string
       const tagged = await a();
       const html = tagged.replace(/^\[\d+\]\s*/, "");
       if (ok(html)) { console.log(`fetch ok via ${name} (${html.length} bytes) ${url}`); return html; }
-      log.push(`${name}: ${tagged.length} bytes ${tagged.slice(0, 120).replace(/\s+/g, " ")}`);
+      let hint = "";
+      for (const p of diagPhrases) {
+        const i = html.toLowerCase().indexOf(p.toLowerCase());
+        if (i >= 0) { hint = ` | found "${p}" at ${i}: ${html.slice(i, i + 200).replace(/\s+/g, " ")}`; break; }
+      }
+      if (!hint && diagPhrases.length) hint = " | none of the diag phrases found in doc";
+      log.push(`${name}: ${tagged.length} bytes, head: ${tagged.slice(0, 100).replace(/\s+/g, " ")}${hint}`);
     } catch (e) { log.push(`${name}: threw ${String((e as Error)?.message ?? e)}`); }
   }
   console.error(`fetchDoc all attempts for ${url}:\n` + log.join("\n"));
@@ -84,7 +93,11 @@ Deno.serve(async (req) => {
     let drawsCount = 0;
     let drawsInfo: unknown = null;
     try {
-      const drawsDoc = await fetchDoc(DRAWS_PAGE_URL, (h) => parseDrawsTable(h).draws.length > 0);
+      const drawsDoc = await fetchDoc(
+        DRAWS_PAGE_URL,
+        (h) => parseDrawsTable(h).draws.length > 0,
+        ["Round type", "Invitations issued", "lowest-ranked"],
+      );
       const dt = parseDrawsTable(drawsDoc);
       if (dt.draws.length) {
         const { error: de } = await supabase.from("crs_draws").upsert(dt.draws, { onConflict: "draw_number" });
