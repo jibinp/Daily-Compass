@@ -2,43 +2,21 @@
 // Updates two tables from IRCC pages:
 //   • crs_pool  — "CRS score distribution of candidates in the pool as of <date>"
 //                 from the rounds-of-invitations page
-//   • crs_draws — Express Entry rounds of invitations from the official rounds page
+//   • crs_draws — Express Entry rounds of invitations, from the dedicated rounds
+//                 page's table (# / Date / Round type / Invitations issued / CRS)
 //
 // Triggered by the "Check now" button and a weekly cron (supabase/crs_cron.sql).
 // No DOM library — parses tables with plain string ops. canada.ca (Akamai) blocks
-// bots / resets HTTP/2, so we go through jina reader + proxy fallbacks.
+// bots / resets HTTP/2, so we fetch through the jina reader (renders JS, proven
+// reliable) with a direct-h1 fallback. corsproxy.io is NOT used — free tier is
+// paywalled (403). allorigins kept as a last resort.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const POOL_URL =
   "https://www.canada.ca/en/immigration-refugees-citizenship/services/immigrate-canada/express-entry/rounds-invitations.html";
-// IRCC publishes the rounds as JSON at ee_rounds_<N>_en.json — N changes over time,
-// so don't hardcode it. Discover it from the pool page (which references the feed
-// it renders from), falling back to a known-good default if not found.
-const DRAWS_JSON_FALLBACK = "https://www.canada.ca/content/dam/ircc/documents/json/ee_rounds_123_en.json";
-// The dedicated rounds page — also likely references the current JSON filename.
 const DRAWS_PAGE_URL =
   "https://www.canada.ca/en/immigration-refugees-citizenship/corporate/mandate/policies-operational-instructions-agreements/ministerial-instructions/express-entry-rounds.html";
-
-function findJsonUrlIn(doc: string): string | null {
-  const m = doc.match(/https:\/\/www\.canada\.ca\/content\/dam\/ircc\/documents\/json\/ee_rounds_\d+_en\.json/i)
-    ?? doc.match(/\/content\/dam\/ircc\/documents\/json\/ee_rounds_\d+_en\.json/i);
-  if (!m) return null;
-  return m[0].startsWith("http") ? m[0] : "https://www.canada.ca" + m[0];
-}
-
-// Discover the current ee_rounds_<N>_en.json URL: check the pool page (already
-// fetched), then the dedicated rounds page, then fall back to a known filename.
-async function discoverDrawsJsonUrl(poolDoc: string): Promise<{ url: string; via: string }> {
-  const fromPool = findJsonUrlIn(poolDoc);
-  if (fromPool) return { url: fromPool, via: "pool-page" };
-  try {
-    const drawsDoc = await fetchDoc(DRAWS_PAGE_URL, () => true);
-    const fromDraws = findJsonUrlIn(drawsDoc);
-    if (fromDraws) return { url: fromDraws, via: "draws-page" };
-  } catch { /* fall through */ }
-  return { url: DRAWS_JSON_FALLBACK, via: "fallback" };
-}
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -47,8 +25,9 @@ const CORS = {
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 const HEADERS = { "User-Agent": UA, "Accept": "text/html,application/xhtml+xml", "Accept-Language": "en-CA,en;q=0.9" };
 
-// Fetch `url`, trying jina reader first (flattens JS + bold), then direct h1 and
-// proxies. Returns the first response for which ok(html) is true.
+// Fetch `url`, trying jina reader first (renders JS, flattens bold/markdown —
+// proven reliable for the pool table), then direct h1, then allorigins.
+// Returns the first response for which ok(html) is true.
 async function fetchDoc(url: string, ok: (h: string) => boolean): Promise<string> {
   const t = () => AbortSignal.timeout(15000);
   const attempts: Array<[string, () => Promise<string>]> = [
@@ -59,7 +38,6 @@ async function fetchDoc(url: string, ok: (h: string) => boolean): Promise<string
       return await (await fetch(url, { headers: HEADERS, signal: t(), ...(client ? { client } : {}) } as RequestInit)).text();
     }],
     ["allorigins", async () => (await fetch("https://api.allorigins.win/raw?url=" + encodeURIComponent(url), { headers: HEADERS, signal: t() })).text()],
-    ["corsproxy", async () => (await fetch("https://corsproxy.io/?url=" + encodeURIComponent(url), { headers: HEADERS, signal: t() })).text()],
   ];
   let last = "";
   for (const [name, a] of attempts) {
@@ -90,32 +68,19 @@ Deno.serve(async (req) => {
     }, { onConflict: "pool_date" });
     if (error) return json({ error: "DB upsert (pool) failed: " + error.message }, 200);
 
-    // ---- draws: try the JSON feed first, fall back to scraping the rounds table ----
+    // ---- draws: scrape the official rounds table (header-anchored parse) ----
     let drawsCount = 0;
     let drawsInfo: unknown = null;
-    let draws: unknown[] = [];
     try {
-      const { url: drawsJsonUrl, via } = await discoverDrawsJsonUrl(poolHtml);
-      const dj = parseDrawsJson(await fetchJson(drawsJsonUrl));
-      if (dj.draws.length) { draws = dj.draws; }
-      else drawsInfo = { source: "json", url: drawsJsonUrl, via, ...dj.diag };
+      const drawsDoc = await fetchDoc(DRAWS_PAGE_URL, (h) => parseDrawsTable(h).draws.length > 0);
+      const dt = parseDrawsTable(drawsDoc);
+      if (dt.draws.length) {
+        const { error: de } = await supabase.from("crs_draws").upsert(dt.draws, { onConflict: "draw_number" });
+        if (de) drawsInfo = "DB upsert (draws) failed: " + de.message;
+        else drawsCount = dt.draws.length;
+      } else drawsInfo = dt.diag;
     } catch (e) {
-      drawsInfo = { source: "json", error: String((e as Error)?.message ?? e) };
-    }
-    if (!draws.length) {
-      try {
-        const drawsPageDoc = await fetchDoc(DRAWS_PAGE_URL, (h) => /round type|invitations issued/i.test(h));
-        const dt = parseDrawsTable(drawsPageDoc);
-        if (dt.draws.length) draws = dt.draws;
-        else drawsInfo = { previous: drawsInfo, source: "table", ...dt.diag };
-      } catch (e) {
-        drawsInfo = { previous: drawsInfo, source: "table", error: String((e as Error)?.message ?? e) };
-      }
-    }
-    if (draws.length) {
-      const { error: de } = await supabase.from("crs_draws").upsert(draws, { onConflict: "draw_number" });
-      if (de) drawsInfo = "DB upsert (draws) failed: " + de.message;
-      else drawsCount = draws.length;
+      drawsInfo = "draws failed: " + String((e as Error)?.message ?? e);
     }
 
     return json({ pool_date: parsed.pool_date, rows: parsed.distribution.length, total: parsed.total, drawsCount, drawsInfo });
@@ -173,89 +138,6 @@ function parsePool(doc: string) {
   const distribution = [...TOP, ...SUB].filter((k) => found.has(k)).map((k) => ({ range: k, count: found.get(k)! }));
   const total = TOP.filter((k) => found.has(k)).reduce((a, k) => a + found.get(k)!, 0) || null;
   return { pool_date, distribution, total, sawLabels };
-}
-
-// Some proxies wrap the body as { contents: "<json string>" }. Unwrap it.
-function unwrap(obj: any): any {
-  if (obj && typeof obj.contents === "string") { try { return JSON.parse(obj.contents); } catch { /* keep */ } }
-  return obj;
-}
-const jsonHasRounds = (txt: string) => { try { return !!findRounds(unwrap(JSON.parse(txt))); } catch { return false; } };
-
-// Fetch the JSON, accepting only a response that actually contains the rounds array.
-// On total failure, throw with a log of every attempt (bytes + body snippet) so the
-// real cause is visible instead of just the last one.
-async function fetchJson(url: string): Promise<string> {
-  const t = () => AbortSignal.timeout(15000);
-  const tries: Array<[string, () => Promise<string>]> = [
-    ["direct", async () => {
-      let client: unknown;
-      try { client = (Deno as unknown as { createHttpClient?: (o: unknown) => unknown }).createHttpClient?.({ http2: false }); } catch { /* off */ }
-      const r = await fetch(url, { headers: HEADERS, signal: t(), ...(client ? { client } : {}) } as RequestInit);
-      return `[${r.status}] ` + await r.text();
-    }],
-    ["allorigins-raw", async () => {
-      const r = await fetch("https://api.allorigins.win/raw?url=" + encodeURIComponent(url), { headers: HEADERS, signal: t() });
-      return `[${r.status}] ` + await r.text();
-    }],
-    ["allorigins-get", async () => {
-      const r = await fetch("https://api.allorigins.win/get?url=" + encodeURIComponent(url), { headers: HEADERS, signal: t() });
-      return `[${r.status}] ` + await r.text();
-    }],
-    ["corsproxy", async () => {
-      const r = await fetch("https://corsproxy.io/?url=" + encodeURIComponent(url), { headers: HEADERS, signal: t() });
-      return `[${r.status}] ` + await r.text();
-    }],
-  ];
-  const log: string[] = [];
-  for (const [name, fn] of tries) {
-    try {
-      const tagged = await fn();
-      const txt = tagged.replace(/^\[\d+\]\s*/, "");
-      if (jsonHasRounds(txt)) { console.log(`json ok via ${name} (${txt.length} bytes)`); return txt; }
-      log.push(`${name}: ${tagged.slice(0, 140)}`);
-    } catch (e) {
-      log.push(`${name}: threw ${String((e as Error)?.message ?? e)}`);
-    }
-  }
-  console.error("fetchJson all attempts:\n" + log.join("\n"));
-  throw new Error("json fetch failed for " + url + " — " + log.join(" | "));
-}
-
-// Find the rounds array wherever it lives in the JSON.
-function findRounds(obj: any): any[] | null {
-  if (Array.isArray(obj)) return obj;
-  if (Array.isArray(obj?.rounds)) return obj.rounds;
-  for (const v of Object.values(obj ?? {})) {
-    if (Array.isArray(v) && v.length && typeof v[0] === "object" && v[0] &&
-      ("drawNumber" in v[0] || "drawDate" in v[0] || "drawNumberURL" in v[0])) return v as any[];
-  }
-  return null;
-}
-
-// IRCC ee_rounds JSON → draws. Fields: drawNumber, drawDate, drawName, drawSize, drawCRS.
-function parseDrawsJson(text: string) {
-  let obj: any;
-  try { obj = unwrap(JSON.parse(text)); } catch (e) { return { draws: [], diag: { parseError: String((e as Error).message), head: text.slice(0, 200) } }; }
-  const rounds = findRounds(obj);
-  if (!rounds) return { draws: [], diag: { topKeys: Object.keys(obj ?? {}), head: JSON.stringify(obj).slice(0, 300) } };
-
-  const seen = new Map<number, unknown>();
-  const toInt = (v: unknown) => parseInt(String(v ?? "").replace(/[^\d]/g, ""), 10);
-  for (const r of rounds) {
-    const draw_number = toInt(r.drawNumber);
-    if (!Number.isInteger(draw_number)) continue;
-    const draw_date = toISODate(String(r.drawDate || r.drawDateFull || ""));
-    if (!draw_date) continue;
-    seen.set(draw_number, {
-      draw_number, draw_date,
-      round_type: (r.drawName || "").toString().trim() || null,
-      invitations: toInt(r.drawSize) || null,
-      crs_cutoff: toInt(r.drawCRS) || null,
-    });
-  }
-  const draws = [...seen.values()];
-  return { draws, diag: { roundCount: rounds.length, firstKeys: rounds[0] ? Object.keys(rounds[0]) : [], parsed: draws.length } };
 }
 
 // Parse the draws table by locating its header row (the official column names:
