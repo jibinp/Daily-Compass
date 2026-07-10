@@ -12,9 +12,33 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const POOL_URL =
   "https://www.canada.ca/en/immigration-refugees-citizenship/services/immigrate-canada/express-entry/rounds-invitations.html";
-// IRCC publishes the rounds (and per-round pool distribution) as JSON — the feed
-// the express-entry-rounds page renders. Far more reliable than scraping HTML.
-const DRAWS_JSON = "https://www.canada.ca/content/dam/ircc/documents/json/ee_rounds_123_en.json";
+// IRCC publishes the rounds as JSON at ee_rounds_<N>_en.json — N changes over time,
+// so don't hardcode it. Discover it from the pool page (which references the feed
+// it renders from), falling back to a known-good default if not found.
+const DRAWS_JSON_FALLBACK = "https://www.canada.ca/content/dam/ircc/documents/json/ee_rounds_123_en.json";
+// The dedicated rounds page — also likely references the current JSON filename.
+const DRAWS_PAGE_URL =
+  "https://www.canada.ca/en/immigration-refugees-citizenship/corporate/mandate/policies-operational-instructions-agreements/ministerial-instructions/express-entry-rounds.html";
+
+function findJsonUrlIn(doc: string): string | null {
+  const m = doc.match(/https:\/\/www\.canada\.ca\/content\/dam\/ircc\/documents\/json\/ee_rounds_\d+_en\.json/i)
+    ?? doc.match(/\/content\/dam\/ircc\/documents\/json\/ee_rounds_\d+_en\.json/i);
+  if (!m) return null;
+  return m[0].startsWith("http") ? m[0] : "https://www.canada.ca" + m[0];
+}
+
+// Discover the current ee_rounds_<N>_en.json URL: check the pool page (already
+// fetched), then the dedicated rounds page, then fall back to a known filename.
+async function discoverDrawsJsonUrl(poolDoc: string): Promise<{ url: string; via: string }> {
+  const fromPool = findJsonUrlIn(poolDoc);
+  if (fromPool) return { url: fromPool, via: "pool-page" };
+  try {
+    const drawsDoc = await fetchDoc(DRAWS_PAGE_URL, () => true);
+    const fromDraws = findJsonUrlIn(drawsDoc);
+    if (fromDraws) return { url: fromDraws, via: "draws-page" };
+  } catch { /* fall through */ }
+  return { url: DRAWS_JSON_FALLBACK, via: "fallback" };
+}
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -66,16 +90,17 @@ Deno.serve(async (req) => {
     }, { onConflict: "pool_date" });
     if (error) return json({ error: "DB upsert (pool) failed: " + error.message }, 200);
 
-    // ---- draws (from the IRCC JSON feed) ----
+    // ---- draws (from the IRCC JSON feed; URL discovered from the pool/draws pages) ----
     let drawsCount = 0;
     let drawsInfo: unknown = null;
     try {
-      const dj = parseDrawsJson(await fetchJson(DRAWS_JSON));
+      const { url: drawsJsonUrl, via } = await discoverDrawsJsonUrl(poolHtml);
+      const dj = parseDrawsJson(await fetchJson(drawsJsonUrl));
       if (dj.draws.length) {
         const { error: de } = await supabase.from("crs_draws").upsert(dj.draws, { onConflict: "draw_number" });
         if (de) drawsInfo = "DB upsert (draws) failed: " + de.message;
         else drawsCount = dj.draws.length;
-      } else drawsInfo = dj.diag;
+      } else drawsInfo = { url: drawsJsonUrl, via, ...dj.diag };
     } catch (e) {
       drawsInfo = "draws failed: " + String((e as Error)?.message ?? e);
     }
