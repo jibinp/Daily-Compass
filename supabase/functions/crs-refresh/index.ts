@@ -27,28 +27,38 @@ const HEADERS = { "User-Agent": UA, "Accept": "text/html,application/xhtml+xml",
 
 // Fetch `url`, trying jina reader first (renders JS, flattens bold/markdown —
 // proven reliable for the pool table), then direct h1, then allorigins.
-// Returns the first response for which ok(html) is true.
+// Returns the first response for which ok(html) is true. On total failure, throw
+// with EVERY attempt's status/bytes/snippet — not just the last — so the real
+// cause is visible.
 async function fetchDoc(url: string, ok: (h: string) => boolean): Promise<string> {
-  const t = () => AbortSignal.timeout(15000);
+  const t = () => AbortSignal.timeout(20000);
   const attempts: Array<[string, () => Promise<string>]> = [
-    ["jina", async () => (await fetch("https://r.jina.ai/" + url, { headers: HEADERS, signal: t() })).text()],
+    ["jina", async () => {
+      const r = await fetch("https://r.jina.ai/" + url, { headers: HEADERS, signal: t() });
+      return `[${r.status}] ` + await r.text();
+    }],
     ["direct", async () => {
       let client: unknown;
       try { client = (Deno as unknown as { createHttpClient?: (o: unknown) => unknown }).createHttpClient?.({ http2: false }); } catch { /* off */ }
-      return await (await fetch(url, { headers: HEADERS, signal: t(), ...(client ? { client } : {}) } as RequestInit)).text();
+      const r = await fetch(url, { headers: HEADERS, signal: t(), ...(client ? { client } : {}) } as RequestInit);
+      return `[${r.status}] ` + await r.text();
     }],
-    ["allorigins", async () => (await fetch("https://api.allorigins.win/raw?url=" + encodeURIComponent(url), { headers: HEADERS, signal: t() })).text()],
+    ["allorigins", async () => {
+      const r = await fetch("https://api.allorigins.win/raw?url=" + encodeURIComponent(url), { headers: HEADERS, signal: t() });
+      return `[${r.status}] ` + await r.text();
+    }],
   ];
-  let last = "";
+  const log: string[] = [];
   for (const [name, a] of attempts) {
     try {
-      const html = await a();
+      const tagged = await a();
+      const html = tagged.replace(/^\[\d+\]\s*/, "");
       if (ok(html)) { console.log(`fetch ok via ${name} (${html.length} bytes) ${url}`); return html; }
-      last = `${name}: ${html.length} bytes, predicate failed`;
-      console.log(last);
-    } catch (e) { last = `${name}: ${String((e as Error)?.message ?? e)}`; console.error(last); }
+      log.push(`${name}: ${tagged.length} bytes ${tagged.slice(0, 120).replace(/\s+/g, " ")}`);
+    } catch (e) { log.push(`${name}: threw ${String((e as Error)?.message ?? e)}`); }
   }
-  throw new Error("all fetch strategies failed — last: " + last);
+  console.error(`fetchDoc all attempts for ${url}:\n` + log.join("\n"));
+  throw new Error("all fetch strategies failed — " + log.join(" | "));
 }
 
 Deno.serve(async (req) => {
