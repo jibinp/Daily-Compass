@@ -214,6 +214,7 @@
     .draws-table td.cat { white-space: normal; min-width: 190px; }
     .draws-table td.n { text-align: right; font-variant-numeric: tabular-nums; }
     .draws-table td.crs { text-align: right; font-variant-numeric: tabular-nums; color: var(--accent); font-weight: 600; }
+    .draws-table td.warn { color: var(--err); font-weight: 600; }
   </style>
 </head>
 <body>
@@ -233,6 +234,7 @@
         <div class="tchildren" id="g-pr">
           <a class="tnode active" href="temporary.html#pool"><span class="tw-sp"></span>📈 Pool breakdown</a>
           <a class="tnode" href="temporary.html#draws"><span class="tw-sp"></span>🎯 Draws</a>
+          <a class="tnode" href="temporary.html#analysis"><span class="tw-sp"></span>🔍 Analysis</a>
         </div>
       </div>
       <a class="tnode soon"><span class="tw-sp"></span>📊 Stats</a>
@@ -253,6 +255,7 @@
       <div class="tabs" id="tabs">
         <button class="tab active" data-tab="pool">📈 Pool breakdown</button>
         <button class="tab" data-tab="draws">🎯 Draws</button>
+        <button class="tab" data-tab="analysis">🔍 Analysis</button>
       </div>
 
       <!-- ---------- Canadian PR › Pool breakdown ---------- -->
@@ -328,6 +331,23 @@
 
           <div class="table-wrap">
             <table class="draws-table" id="drawsTable"></table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------- Canadian PR › Analysis ---------- -->
+      <section class="tab-panel" id="tab-analysis">
+        <div class="field">
+          <div class="field-head"><span class="icon">🔍</span><span class="label">Pool growth between snapshots</span></div>
+          <div class="muted-note">
+            For each pair of consecutive pool snapshots: take the earlier total, subtract the
+            invitations issued by draws in between (candidates removed from the pool), then
+            compare that expected number to the actual later total. The difference is how many
+            new candidates joined the pool in that window.
+          </div>
+          <div id="analysisMeta" class="muted-note"></div>
+          <div class="table-wrap">
+            <table class="draws-table" id="analysisTable"></table>
           </div>
         </div>
       </section>
@@ -423,7 +443,7 @@
     // tree links use #pool / #draws on the same page — switch tab on hash change
     window.addEventListener('hashchange', () => {
       const h = location.hash.replace('#', '');
-      if (h === 'draws' || h === 'pool') selectTab(h);
+      if (['draws', 'pool', 'analysis'].includes(h)) selectTab(h);
     });
 
     $('logoutBtn').addEventListener('click', async () => { await DB.signOut(); });
@@ -539,6 +559,7 @@
           crsMsg(`Updated: pool as of ${fmtDate(res.pool_date)} (${res.rows}/17 bands)${dr}.${partial}`, res.rows < 17 ? 'err' : 'ok');
           await loadCrs();
           try { await loadDraws(); } catch { /* draws table may not exist yet */ }
+          try { renderAnalysis(); } catch { /* ignore */ }
         } else {
           crsMsg('Checked — no data returned.', 'err');
         }
@@ -579,6 +600,7 @@
         crsMsg(`Saved ${distribution.length} counts for ${fmtDate(pool_date)}.`, 'ok');
         $('crsForm').classList.add('hidden');
         await loadCrs();
+        try { renderAnalysis(); } catch { /* ignore */ }
       } catch (e) {
         crsMsg('Save failed: ' + (e.message || ''), 'err');
       } finally { $('crsSave').disabled = false; }
@@ -649,6 +671,7 @@
           const dbg = !res.drawsCount && res.drawsInfo ? ' · debug: ' + JSON.stringify(res.drawsInfo).slice(0, 1500) : '';
           drawsMsg(`Updated — ${res.drawsCount || 0} draws.${dbg}`, res.drawsCount ? 'ok' : 'err');
           await loadDraws();
+          try { renderAnalysis(); } catch { /* ignore */ }
         }
       } catch (e) {
         drawsMsg('Auto-check unavailable (deploy the crs-refresh function). Add manually. ' + (e.message || ''), 'err');
@@ -678,10 +701,43 @@
         ['dfNum', 'dfType', 'dfInv', 'dfCrs'].forEach(id => $(id).value = '');
         $('drawsForm').classList.add('hidden');
         await loadDraws();
+        try { renderAnalysis(); } catch { /* ignore */ }
       } catch (e) {
         drawsMsg('Save failed: ' + (e.message || ''), 'err');
       } finally { $('dfSave').disabled = false; }
     });
+
+    // ---- analysis: pool growth between consecutive snapshots ----
+    // expected_B = total_A - (invitations from draws with date in (A, B])
+    // new_entrants = actual_total_B - expected_B
+    function renderAnalysis() {
+      const t = $('analysisTable');
+      const pools = [...crsRows].sort((a, b) => a.pool_date < b.pool_date ? -1 : 1)
+        .map(r => ({ date: r.pool_date, total: computeTotal(distMap(r.distribution)) }))
+        .filter(p => p.total > 0);
+      if (pools.length < 2) {
+        t.innerHTML = '<tbody><tr><td>Need at least 2 pool snapshots to compare. Add more on Pool breakdown.</td></tr></tbody>';
+        $('analysisMeta').textContent = ''; return;
+      }
+      const head = '<thead><tr><th>From</th><th>To</th><th>Pool A</th><th>Draws in window</th><th>Invitations</th>' +
+        '<th>Expected pool B</th><th>Actual pool B</th><th>New candidates</th></tr></thead>';
+      const rowsHtml = [];
+      for (let i = 0; i < pools.length - 1; i++) {
+        const a = pools[i], b = pools[i + 1];
+        const windowDraws = drawsRows.filter(d => d.draw_date > a.date && d.draw_date <= b.date);
+        const invitations = windowDraws.reduce((s, d) => s + (d.invitations || 0), 0);
+        const expected = a.total - invitations;
+        const newCandidates = b.total - expected;
+        const cls = newCandidates > 0 ? 'crs' : newCandidates < 0 ? 'warn' : '';
+        const sign = newCandidates > 0 ? '+' : '';
+        rowsHtml.push(`<tr><td>${fmtDate(a.date)}</td><td>${fmtDate(b.date)}</td>` +
+          `<td class="n">${num(a.total)}</td><td class="n">${windowDraws.length}</td><td class="n">${num(invitations)}</td>` +
+          `<td class="n">${num(expected)}</td><td class="n">${num(b.total)}</td>` +
+          `<td class="n ${cls}">${sign}${num(newCandidates)}</td></tr>`);
+      }
+      t.innerHTML = head + '<tbody>' + rowsHtml.reverse().join('') + '</tbody>';   // most recent window first
+      $('analysisMeta').innerHTML = `${pools.length} pool snapshots · ${pools.length - 1} windows compared`;
+    }
 
     // ---- route: no session → sign in on the picker page ----
     function showLogin() { window.location.replace('index.html'); }
@@ -689,8 +745,9 @@
       $('appView').classList.remove('hidden');
       try { await loadCrs(); } catch (e) { crsMsg('Could not load CRS data: ' + (e.message || ''), 'err'); }
       try { await loadDraws(); } catch (e) { $('drawsMeta').textContent = 'Could not load draws: ' + (e.message || ''); }
+      try { renderAnalysis(); } catch (e) { $('analysisMeta').textContent = 'Could not compute analysis: ' + (e.message || ''); }
       const h = location.hash.replace('#', '');
-      if (h === 'draws' || h === 'pool') selectTab(h);
+      if (['draws', 'pool', 'analysis'].includes(h)) selectTab(h);
     }
 
     DB.onAuthChange(session => { if (session) showApp(); else showLogin(); });
