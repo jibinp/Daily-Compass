@@ -33,8 +33,10 @@ const HEADERS = { "User-Agent": UA, "Accept": "text/html,application/xhtml+xml",
 async function fetchDoc(url: string, ok: (h: string) => boolean): Promise<string> {
   const t = () => AbortSignal.timeout(20000);
   const attempts: Array<[string, () => Promise<string>]> = [
+    // No spoofed browser UA here — jina uses its own fetch internally, and
+    // forwarding our headers to jina's own request changes its behavior.
     ["jina", async () => {
-      const r = await fetch("https://r.jina.ai/" + url, { headers: HEADERS, signal: t() });
+      const r = await fetch("https://r.jina.ai/" + url, { signal: t() });
       return `[${r.status}] ` + await r.text();
     }],
     ["direct", async () => {
