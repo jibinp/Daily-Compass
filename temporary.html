@@ -853,7 +853,21 @@
         }
         return { a, b, delta, fine };
       });
-      return windows.length;
+
+      // Pending column: latest snapshot → today. No new snapshot to confirm
+      // actuals against yet, so every delta is unknown ("—") — mirrors the
+      // pending row in the aggregate Analysis table.
+      const pools = getPoolsSorted();
+      if (pools.length) {
+        const last = pools[pools.length - 1];
+        const today = new Date().toISOString().slice(0, 10);
+        if (today > last.date) {
+          const delta = {};
+          for (const rg of RANGES) delta[rg.r] = null;
+          bandResults.push({ a: last, b: { date: today }, delta, fine: false, pending: true });
+        }
+      }
+      return bandResults.length;
     }
 
     function renderBandAnalysis() {
@@ -861,9 +875,9 @@
       if (!computeBandAnalysis()) {
         t.innerHTML = '<tbody><tr><td>Need at least 2 pool snapshots.</td></tr></tbody>'; return;
       }
-      const cols = bandResults.slice().reverse();   // most recent window first
+      const cols = bandResults.slice().reverse();   // most recent window (or pending) first
       const head = '<thead><tr><th>CRS band</th>' +
-        cols.map(r => `<th>${fmtShort(r.a.date)} → ${fmtShort(r.b.date)}</th>`).join('') + '</tr></thead>';
+        cols.map(r => `<th>${fmtShort(r.a.date)} → ${r.pending ? 'Today' : fmtShort(r.b.date)}</th>`).join('') + '</tr></thead>';
       let body = '';
       for (const rg of RANGES) {
         if (rg.sub && !bandExpanded.has(parentOf[rg.r])) continue;
@@ -881,6 +895,15 @@
           body += `<tr class="${rg.sub ? 'sub' : ''}"><td>${rg.r}</td>${cells}</tr>`;
         }
       }
+      // Total row: sum of the 7 top-level bands (subs excluded — already counted in their group).
+      const totalCells = cols.map(r => {
+        if (TOP.some(band => r.delta[band] == null)) return '<td>—</td>';
+        const sum = TOP.reduce((s, band) => s + (r.delta[band] || 0), 0);
+        const cls = sum > 0 ? 'warn' : sum < 0 ? 'good' : '';
+        const sign = sum > 0 ? '+' : '';
+        return `<td class="${cls}">${sign}${num(sum)}</td>`;
+      }).join('');
+      body += `<tr class="total"><td>Total</td>${totalCells}</tr>`;
       t.innerHTML = head + '<tbody>' + body + '</tbody>';
     }
     $('bandAnalysisTable').addEventListener('click', e => {
