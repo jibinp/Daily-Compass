@@ -829,13 +829,11 @@
       const invSum = rows.reduce((s, r) => s + (r.invitations || 0), 0);
       const lowest = crsVals.length ? Math.min(...crsVals) : null;
       const highest = crsVals.length ? Math.max(...crsVals) : null;
-      const avg = crsVals.length ? Math.round(crsVals.reduce((s, v) => s + v, 0) / crsVals.length) : null;
       const tiles = [
         ['Total draws', num(rows.length)],
         ['Total invitations', num(invSum)],
         ['Lowest CRS cutoff', num(lowest)],
         ['Highest CRS cutoff', num(highest)],
-        ['Average CRS cutoff', num(avg)],
       ];
       g.innerHTML = tiles.map(([l, v]) => `<div class="stat-tile"><div class="v">${v}</div><div class="l">${l}</div></div>`).join('');
     }
