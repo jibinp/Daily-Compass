@@ -1222,25 +1222,16 @@
         const cls = pct == null ? '' : pct > 100 ? 'warn' : pct >= 90 ? 'good' : '';
         return `<td class="n ${cls}">${pct == null ? '—' : pct + '%'}</td>`;
       };
-      const row = (year, label, iv, yearTotal, qv, isTotal) =>
-        `<tr${isTotal ? ' class="total"' : ''}><td>${year}</td><td class="cat">${label}</td><td class="n">${num(iv)}</td>` +
-        `<td class="n">${num(yearTotal)}</td>${pctCell(iv, yearTotal)}<td class="n">${num(qv)}</td>${usageCell(iv, qv)}</tr>`;
-      // No separate "Total" row — the "Total IRCC invitations" column already
-      // carries that figure on every row, so a duplicate row is redundant.
+      // % of total is meaningless when Total itself is the selection — show N/A.
+      const row = (year, label, iv, yearTotal, qv) =>
+        `<tr><td>${year}</td><td class="cat">${label}</td><td class="n">${num(iv)}</td>` +
+        `<td class="n">${num(yearTotal)}</td>${isTotalCat(label) ? '<td class="n">N/A</td>' : pctCell(iv, yearTotal)}` +
+        `<td class="n">${num(qv)}</td>${usageCell(iv, qv)}</tr>`;
       const body = years.map(y => {
         const yearTotal = yearlyIssued()[y] || 0;
-        if (isTotalCat(category)) {
-          // "Total" selected: full breakdown — every category with a saved quota that year
-          const cats = quotaRows.filter(q => String(q.year) === y && !isTotalCat(q.category))
-            .sort((a, b) => a.category < b.category ? -1 : 1);
-          return cats.map(q => row(y, q.category, issuedFor(y, q.category), yearTotal, q.quota, false)).join('');
-        }
-        // a specific category selected: focused row for it, using the same
-        // helper the chart uses — actual invitations for that category, not the total
         const { issued: iv, quota: qv } = quotaFor(y, category);
-        return row(y, category, iv, yearTotal, qv, false);
+        return row(y, category, iv, yearTotal, qv);
       }).join('');
-      if (!body) { t.innerHTML = '<tbody><tr><td>No category quotas saved yet. Use “Add / update a year”.</td></tr></tbody>'; return; }
       t.innerHTML = head + '<tbody>' + body + '</tbody>';
     }
 
