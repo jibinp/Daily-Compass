@@ -360,7 +360,6 @@
           </div>
 
           <div class="draws-filters">
-            <input type="search" id="drawsSearch" placeholder="Search category…" />
             <select id="drawsCat"><option value="">All categories</option></select>
             <select id="drawsYear"><option value="">All years</option></select>
             <div class="draws-daterange">
@@ -433,7 +432,6 @@
           <div class="muted-note">Same filters as Draws — shows aggregate stats for the filtered set instead of a row table.</div>
 
           <div class="draws-filters">
-            <input type="search" id="statsSearch" placeholder="Search category…" />
             <select id="statsCat"><option value="">All categories</option></select>
             <select id="statsYear"><option value="">All years</option></select>
             <div class="draws-daterange">
@@ -756,11 +754,9 @@
     const DRAW_COLS = [['draw_number', '#'], ['draw_date', 'Date'], ['round_type', 'Category'], ['crs_cutoff', 'CRS'], ['invitations', 'ITAs']];
 
     function filteredDraws() {
-      const q = ($('drawsSearch').value || '').toLowerCase();
       const cat = $('drawsCat').value, yr = $('drawsYear').value;
       const from = $('drawsFrom').value, to = $('drawsTo').value;
       return drawsRows.filter(r =>
-        (!q || (r.round_type || '').toLowerCase().includes(q)) &&
         (!cat || r.round_type === cat) &&
         (!yr || (r.draw_date || '').startsWith(yr)) &&
         (!from || r.draw_date >= from) &&
@@ -803,7 +799,7 @@
       fillStatsFilters();
       renderStats();
     }
-    ['drawsSearch', 'drawsCat', 'drawsYear', 'drawsFrom', 'drawsTo'].forEach(id => $(id).addEventListener('input', renderDrawsTable));
+    ['drawsCat', 'drawsYear', 'drawsFrom', 'drawsTo'].forEach(id => $(id).addEventListener('input', renderDrawsTable));
     $('drawsDateClear').addEventListener('click', () => {
       $('drawsFrom').value = ''; $('drawsTo').value = '';
       renderDrawsTable();
@@ -811,11 +807,9 @@
 
     // ---- stats: same filter shape as Draws, own inputs, summary tiles instead of a table ----
     function filteredDrawsStats() {
-      const q = ($('statsSearch').value || '').toLowerCase();
       const cat = $('statsCat').value, yr = $('statsYear').value;
       const from = $('statsFrom').value, to = $('statsTo').value;
       return drawsRows.filter(r =>
-        (!q || (r.round_type || '').toLowerCase().includes(q)) &&
         (!cat || r.round_type === cat) &&
         (!yr || (r.draw_date || '').startsWith(yr)) &&
         (!from || r.draw_date >= from) &&
@@ -845,7 +839,7 @@
       ];
       g.innerHTML = tiles.map(([l, v]) => `<div class="stat-tile"><div class="v">${v}</div><div class="l">${l}</div></div>`).join('');
     }
-    ['statsSearch', 'statsCat', 'statsYear', 'statsFrom', 'statsTo'].forEach(id => $(id).addEventListener('input', renderStats));
+    ['statsCat', 'statsYear', 'statsFrom', 'statsTo'].forEach(id => $(id).addEventListener('input', renderStats));
     $('statsDateClear').addEventListener('click', () => {
       $('statsFrom').value = ''; $('statsTo').value = '';
       renderStats();
