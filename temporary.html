@@ -1254,17 +1254,21 @@
 
     function openQuotaForm(year, category) {
       $('qfYear').value = year || new Date().getFullYear();
-      $('qfCategory').value = category || 'Total';
-      const existing = quotaRows.find(q => q.year === Number($('qfYear').value) && q.category === $('qfCategory').value);
+      $('qfCategory').value = category || '';   // blank on a fresh add — no "Total" to accidentally type into
+      const existing = category
+        ? quotaRows.find(q => q.year === Number($('qfYear').value) && q.category === category)
+        : null;
       $('qfQuota').value = existing ? existing.quota : '';
       $('quotaForm').classList.remove('hidden');
+      if (category) $('qfCategory').select();   // editing an existing entry — highlight so typing replaces it
+      else $('qfCategory').focus();
     }
     $('quotaAddToggle').addEventListener('click', () => {
       if ($('quotaForm').classList.contains('hidden')) openQuotaForm();
       else $('quotaForm').classList.add('hidden');
     });
-    ['qfYear', 'qfCategory'].forEach(id =>
-      $(id).addEventListener('change', () => openQuotaForm($('qfYear').value, $('qfCategory').value)));
+    $('qfYear').addEventListener('change', () => openQuotaForm($('qfYear').value, $('qfCategory').value));
+    $('qfCategory').addEventListener('change', () => openQuotaForm($('qfYear').value, $('qfCategory').value));
     $('qfCancel').addEventListener('click', () => $('quotaForm').classList.add('hidden'));
     $('qfSave').addEventListener('click', async () => {
       const year = parseInt($('qfYear').value, 10);
