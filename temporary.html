@@ -463,7 +463,8 @@
             <label class="muted-note" for="qfYear">Year</label>
             <input type="number" id="qfYear" inputmode="numeric" />
             <label class="muted-note" for="qfCategory">Category</label>
-            <input type="text" id="qfCategory" placeholder="Total, Canadian Experience Class, …" />
+            <input type="text" id="qfCategory" list="qfCategoryList" placeholder="Total, Canadian Experience Class, …" />
+            <datalist id="qfCategoryList"></datalist>
             <label class="muted-note" for="qfQuota">Quota (target invitations)</label>
             <input type="number" id="qfQuota" inputmode="numeric" />
             <div class="btn-row">
@@ -1245,6 +1246,8 @@
       const prev = sel.value || 'Total';
       sel.innerHTML = '<option value="Total">Total</option>' + cats.map(c => `<option>${c}</option>`).join('');
       sel.value = [...sel.options].some(o => o.value === prev) ? prev : 'Total';
+      // same list as suggestions for the entry form's Category field
+      $('qfCategoryList').innerHTML = ['Total', ...cats].map(c => `<option value="${c.replace(/"/g, '&quot;')}"></option>`).join('');
     }
 
     $('quotaChartCat').addEventListener('change', () => { renderQuotaChart(); renderQuotaTable(); });
