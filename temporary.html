@@ -1225,24 +1225,22 @@
       const row = (year, label, iv, yearTotal, qv, isTotal) =>
         `<tr${isTotal ? ' class="total"' : ''}><td>${year}</td><td class="cat">${label}</td><td class="n">${num(iv)}</td>` +
         `<td class="n">${num(yearTotal)}</td>${pctCell(iv, yearTotal)}<td class="n">${num(qv)}</td>${usageCell(iv, qv)}</tr>`;
+      // No separate "Total" row — the "Total IRCC invitations" column already
+      // carries that figure on every row, so a duplicate row is redundant.
       const body = years.map(y => {
         const yearTotal = yearlyIssued()[y] || 0;
-        let rows = '';
         if (isTotalCat(category)) {
           // "Total" selected: full breakdown — every category with a saved quota that year
           const cats = quotaRows.filter(q => String(q.year) === y && !isTotalCat(q.category))
             .sort((a, b) => a.category < b.category ? -1 : 1);
-          rows += cats.map(q => row(y, q.category, issuedFor(y, q.category), yearTotal, q.quota, false)).join('');
-        } else {
-          // a specific category selected: focused row for it, using the same
-          // helper the chart uses — actual invitations for that category, not the total
-          const { issued: iv, quota: qv } = quotaFor(y, category);
-          rows += row(y, category, iv, yearTotal, qv, false);
+          return cats.map(q => row(y, q.category, issuedFor(y, q.category), yearTotal, q.quota, false)).join('');
         }
-        const tot = effectiveTotalQuota(y);
-        rows += row(y, `Total${tot.computed ? ' (sum)' : ''}`, yearTotal, yearTotal, tot.value, true);
-        return rows;
+        // a specific category selected: focused row for it, using the same
+        // helper the chart uses — actual invitations for that category, not the total
+        const { issued: iv, quota: qv } = quotaFor(y, category);
+        return row(y, category, iv, yearTotal, qv, false);
       }).join('');
+      if (!body) { t.innerHTML = '<tbody><tr><td>No category quotas saved yet. Use “Add / update a year”.</td></tr></tbody>'; return; }
       t.innerHTML = head + '<tbody>' + body + '</tbody>';
     }
 
