@@ -418,7 +418,13 @@ insert into crs_draws (draw_number, draw_date, round_type, invitations, crs_cuto
   (416, '2026-05-25', 'Provincial Nominee Program', 334, 805),
   (417, '2026-05-27', 'Canadian Experience Class', 3000, 518),
   (418, '2026-05-28', 'French-Language proficiency 2026-Version 2', 4500, 409),
-  (419, '2026-06-22', 'Provincial Nominee Program', 955, 730)
+  (419, '2026-06-22', 'Provincial Nominee Program', 955, 730),
+  (420, '2026-06-23', 'Canadian Experience Class', 4000, 516),
+  (421, '2026-06-24', 'Physicians with Canadian Work Experience, 2026-Version 1', 271, 223),
+  (422, '2026-06-25', 'Healthcare and Social Services Occupations, 2026-Version 3', 4000, 475),
+  (423, '2026-07-06', 'Provincial Nominee Program', 534, 708),
+  (424, '2026-07-07', 'Canadian Experience Class', 2000, 517),
+  (425, '2026-07-09', 'French-Language proficiency 2026-Version 2', 5000, 420)
 on conflict (draw_number) do update set
   draw_date=excluded.draw_date, round_type=excluded.round_type,
   invitations=excluded.invitations, crs_cutoff=excluded.crs_cutoff;
