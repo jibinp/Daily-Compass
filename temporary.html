@@ -213,6 +213,7 @@
       border-radius: 8px; padding: 6px 9px; font-size: 0.82rem; color-scheme: dark;
     }
     .draws-filters input { flex: 1; min-width: 130px; }
+    .draws-filters input[type="date"] { flex: 0 0 auto; min-width: 145px; }
     .draws-filters input:focus, .draws-filters select:focus { outline: none; border-color: var(--accent); }
     .draws-table td.cat { white-space: normal; min-width: 190px; }
     .draws-table td.n { text-align: right; font-variant-numeric: tabular-nums; }
@@ -332,6 +333,11 @@
             <input type="search" id="drawsSearch" placeholder="Search category…" />
             <select id="drawsCat"><option value="">All categories</option></select>
             <select id="drawsYear"><option value="">All years</option></select>
+            <label class="muted-note" for="drawsFrom" style="align-self:center;">From</label>
+            <input type="date" id="drawsFrom" />
+            <label class="muted-note" for="drawsTo" style="align-self:center;">To</label>
+            <input type="date" id="drawsTo" />
+            <button class="mini-btn ghost" id="drawsDateClear" title="Clear date filter">✕</button>
           </div>
           <div id="drawsMeta" class="muted-note"></div>
 
@@ -652,10 +658,13 @@
     function filteredDraws() {
       const q = ($('drawsSearch').value || '').toLowerCase();
       const cat = $('drawsCat').value, yr = $('drawsYear').value;
+      const from = $('drawsFrom').value, to = $('drawsTo').value;
       return drawsRows.filter(r =>
         (!q || (r.round_type || '').toLowerCase().includes(q)) &&
         (!cat || r.round_type === cat) &&
-        (!yr || (r.draw_date || '').startsWith(yr)));
+        (!yr || (r.draw_date || '').startsWith(yr)) &&
+        (!from || r.draw_date >= from) &&
+        (!to || r.draw_date <= to));
     }
     function renderDrawsTable() {
       const t = $('drawsTable');
@@ -688,7 +697,11 @@
       $('drawTypes').innerHTML = cats.map(c => `<option value="${c.replace(/"/g, '&quot;')}"></option>`).join('');   // Add-form autocomplete
     }
     async function loadDraws() { drawsRows = await DB.drawsAll(); fillDrawFilters(); renderDrawsTable(); }
-    ['drawsSearch', 'drawsCat', 'drawsYear'].forEach(id => $(id).addEventListener('input', renderDrawsTable));
+    ['drawsSearch', 'drawsCat', 'drawsYear', 'drawsFrom', 'drawsTo'].forEach(id => $(id).addEventListener('input', renderDrawsTable));
+    $('drawsDateClear').addEventListener('click', () => {
+      $('drawsFrom').value = ''; $('drawsTo').value = '';
+      renderDrawsTable();
+    });
 
     $('drawsTable').addEventListener('click', e => {
       const th = e.target.closest('th[data-col]'); if (!th) return;
