@@ -198,9 +198,9 @@
       font-size: 0.88rem; color-scheme: dark; width: 100%; font-family: inherit;
     }
     .crs-form textarea { resize: vertical; }
-    input[type="number"] { -moz-appearance: textfield; }
+    input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
     input[type="number"]::-webkit-outer-spin-button,
-    input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; appearance: none; margin: 0; }
     .crs-form input:focus, .crs-form textarea:focus { outline: none; border-color: var(--accent); }
     .btn-row { display: flex; gap: 8px; margin-top: 4px; }
     /* ---- draws table ---- */
@@ -344,16 +344,16 @@
 
           <div id="drawsForm" class="crs-form hidden">
             <label class="muted-note" for="dfNum">Draw #</label>
-            <input type="number" id="dfNum" inputmode="numeric" />
+            <input type="text" id="dfNum" inputmode="numeric" pattern="[0-9]*" />
             <label class="muted-note" for="dfDate">Date</label>
             <input type="date" id="dfDate" />
             <label class="muted-note" for="dfType">Round type / category</label>
             <input type="text" id="dfType" list="drawTypes" placeholder="Type or pick…" />
             <datalist id="drawTypes"></datalist>
             <label class="muted-note" for="dfInv">Invitations issued</label>
-            <input type="number" id="dfInv" inputmode="numeric" />
+            <input type="text" id="dfInv" inputmode="numeric" pattern="[0-9]*" />
             <label class="muted-note" for="dfCrs">CRS cutoff</label>
-            <input type="number" id="dfCrs" inputmode="numeric" />
+            <input type="text" id="dfCrs" inputmode="numeric" pattern="[0-9]*" />
             <div class="btn-row">
               <button class="mini-btn" id="dfSave">Save draw</button>
               <button class="mini-btn ghost" id="dfCancel">Cancel</button>
@@ -461,12 +461,12 @@
 
           <div id="quotaForm" class="crs-form hidden">
             <label class="muted-note" for="qfYear">Year</label>
-            <input type="number" id="qfYear" inputmode="numeric" />
+            <input type="text" id="qfYear" inputmode="numeric" pattern="[0-9]*" />
             <label class="muted-note" for="qfCategory">Category</label>
             <input type="text" id="qfCategory" list="qfCategoryList" placeholder="Type or pick…" />
             <datalist id="qfCategoryList"></datalist>
             <label class="muted-note" for="qfQuota">Quota (target invitations)</label>
-            <input type="number" id="qfQuota" inputmode="numeric" />
+            <input type="text" id="qfQuota" inputmode="numeric" pattern="[0-9]*" />
             <div class="btn-row">
               <button class="mini-btn" id="qfSave">Save</button>
               <button class="mini-btn ghost" id="qfCancel">Cancel</button>
@@ -688,7 +688,7 @@
       const m = distMap(dist);
       $('crsInputs').innerHTML = RANGES.map(rg =>
         `<label class="crs-in ${rg.sub ? 'sub' : ''}"><span>${rg.r}</span>` +
-        `<input type="number" inputmode="numeric" min="0" data-range="${rg.r}" value="${m[rg.r] ?? ''}" /></label>`
+        `<input type="text" inputmode="numeric" pattern="[0-9]*" data-range="${rg.r}" value="${m[rg.r] ?? ''}" /></label>`
       ).join('');
     }
 
