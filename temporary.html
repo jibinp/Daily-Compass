@@ -236,6 +236,7 @@
           <a class="tnode active" href="temporary.html#pool"><span class="tw-sp"></span>📈 Pool breakdown</a>
           <a class="tnode" href="temporary.html#draws"><span class="tw-sp"></span>🎯 Draws</a>
           <a class="tnode" href="temporary.html#analysis"><span class="tw-sp"></span>🔍 Analysis</a>
+          <a class="tnode" href="temporary.html#growth"><span class="tw-sp"></span>🌱 Growth</a>
         </div>
       </div>
       <a class="tnode soon"><span class="tw-sp"></span>📊 Stats</a>
@@ -257,6 +258,7 @@
         <button class="tab active" data-tab="pool">📈 Pool breakdown</button>
         <button class="tab" data-tab="draws">🎯 Draws</button>
         <button class="tab" data-tab="analysis">🔍 Analysis</button>
+        <button class="tab" data-tab="growth">🌱 Growth</button>
       </div>
 
       <!-- ---------- Canadian PR › Pool breakdown ---------- -->
@@ -367,6 +369,22 @@
         </div>
       </section>
 
+      <!-- ---------- Canadian PR › Growth ---------- -->
+      <section class="tab-panel" id="tab-growth">
+        <div class="field">
+          <div class="field-head"><span class="icon">🌱</span><span class="label">Pool growth per band</span></div>
+          <div class="muted-note">
+            One column per pool snapshot date. Each cell is the raw change in that band vs. the
+            previous snapshot — no draws math, just how the published count moved. Updates
+            automatically whenever a new date is added on Pool breakdown.
+          </div>
+          <div id="growthMeta" class="muted-note"></div>
+          <div class="table-wrap">
+            <table class="crs-table" id="growthTable"></table>
+          </div>
+        </div>
+      </section>
+
     </div>
   </div>
 
@@ -458,7 +476,7 @@
     // tree links use #pool / #draws on the same page — switch tab on hash change
     window.addEventListener('hashchange', () => {
       const h = location.hash.replace('#', '');
-      if (['draws', 'pool', 'analysis'].includes(h)) selectTab(h);
+      if (['draws', 'pool', 'analysis', 'growth'].includes(h)) selectTab(h);
     });
 
     $('logoutBtn').addEventListener('click', async () => { await DB.signOut(); });
@@ -575,7 +593,7 @@
           crsMsg(`Updated: pool as of ${fmtDate(res.pool_date)} (${res.rows}/17 bands)${dr}.${partial}`, res.rows < 17 ? 'err' : 'ok');
           await loadCrs();
           try { await loadDraws(); } catch { /* draws table may not exist yet */ }
-          try { renderAnalysis(); renderBandAnalysis(); } catch { /* ignore */ }
+          try { renderAnalysis(); renderBandAnalysis(); renderGrowth(); } catch { /* ignore */ }
         } else {
           crsMsg('Checked — no data returned.', 'err');
         }
@@ -616,7 +634,7 @@
         crsMsg(`Saved ${distribution.length} counts for ${fmtDate(pool_date)}.`, 'ok');
         $('crsForm').classList.add('hidden');
         await loadCrs();
-        try { renderAnalysis(); renderBandAnalysis(); } catch { /* ignore */ }
+        try { renderAnalysis(); renderBandAnalysis(); renderGrowth(); } catch { /* ignore */ }
       } catch (e) {
         crsMsg('Save failed: ' + (e.message || ''), 'err');
       } finally { $('crsSave').disabled = false; }
@@ -687,7 +705,7 @@
           const dbg = !res.drawsCount && res.drawsInfo ? ' · debug: ' + JSON.stringify(res.drawsInfo).slice(0, 1500) : '';
           drawsMsg(`Updated — ${res.drawsCount || 0} draws.${dbg}`, res.drawsCount ? 'ok' : 'err');
           await loadDraws();
-          try { renderAnalysis(); renderBandAnalysis(); } catch { /* ignore */ }
+          try { renderAnalysis(); renderBandAnalysis(); renderGrowth(); } catch { /* ignore */ }
         }
       } catch (e) {
         drawsMsg('Auto-check unavailable (deploy the crs-refresh function). Add manually. ' + (e.message || ''), 'err');
@@ -717,21 +735,25 @@
         ['dfNum', 'dfType', 'dfInv', 'dfCrs'].forEach(id => $(id).value = '');
         $('drawsForm').classList.add('hidden');
         await loadDraws();
-        try { renderAnalysis(); renderBandAnalysis(); } catch { /* ignore */ }
+        try { renderAnalysis(); renderBandAnalysis(); renderGrowth(); } catch { /* ignore */ }
       } catch (e) {
         drawsMsg('Save failed: ' + (e.message || ''), 'err');
       } finally { $('dfSave').disabled = false; }
     });
 
     // ---- analysis: pool growth between consecutive snapshots ----
-    // pools[]: sorted snapshots with both aggregate total and per-band map.
-    function poolWindows() {
-      const pools = [...crsRows].sort((a, b) => a.pool_date < b.pool_date ? -1 : 1)
+    // Sorted (oldest→newest) pool snapshots with both aggregate total and per-band map.
+    function getPoolsSorted() {
+      return [...crsRows].sort((a, b) => a.pool_date < b.pool_date ? -1 : 1)
         .map(r => {
           const bands = distMap(r.distribution);
           return { date: r.pool_date, total: computeTotal(bands), bands };
         })
         .filter(p => p.total > 0);
+    }
+
+    function poolWindows() {
+      const pools = getPoolsSorted();
       const windows = [];
       for (let i = 0; i < pools.length - 1; i++) {
         const a = pools[i], b = pools[i + 1];
@@ -849,15 +871,58 @@
       renderBandAnalysis();
     });
 
+    // ---- growth: raw per-band change vs. the previous snapshot, one column per date ----
+    const growthExpanded = new Set();
+    function renderGrowth() {
+      const t = $('growthTable');
+      const pools = getPoolsSorted();
+      if (pools.length < 2) {
+        t.innerHTML = '<tbody><tr><td>Need at least 2 pool snapshots to show growth.</td></tr></tbody>';
+        $('growthMeta').textContent = ''; return;
+      }
+      const cols = pools.slice().reverse();   // most recent date first
+      const head = '<thead><tr><th>CRS band</th>' +
+        cols.map(p => `<th>${fmtShort(p.date)}</th>`).join('') + '</tr></thead>';
+      let body = '';
+      for (const rg of RANGES) {
+        if (rg.sub && !growthExpanded.has(parentOf[rg.r])) continue;
+        const cells = cols.map(p => {
+          const idx = pools.indexOf(p);
+          if (idx === 0) return '<td>—</td>';         // earliest date: no prior to diff against
+          const prev = pools[idx - 1];
+          const curKnown = rg.r in p.bands, prevKnown = rg.r in prev.bands;
+          if (!curKnown || !prevKnown) return '<td>—</td>';
+          const v = p.bands[rg.r] - prev.bands[rg.r];
+          const cls = v > 0 ? 'warn' : v < 0 ? 'good' : '';
+          const sign = v > 0 ? '+' : '';
+          return `<td class="${cls}">${sign}${num(v)}</td>`;
+        }).join('');
+        if (!rg.sub && hasSubs[rg.r]) {
+          const open = growthExpanded.has(rg.r);
+          body += `<tr class="grp" data-range="${rg.r}"><td><span class="tw${open ? ' open' : ''}">▶</span>${rg.r}</td>${cells}</tr>`;
+        } else {
+          body += `<tr class="${rg.sub ? 'sub' : ''}"><td>${rg.r}</td>${cells}</tr>`;
+        }
+      }
+      t.innerHTML = head + '<tbody>' + body + '</tbody>';
+      $('growthMeta').innerHTML = `${pools.length} pool snapshots`;
+    }
+    $('growthTable').addEventListener('click', e => {
+      const tr = e.target.closest('tr.grp'); if (!tr) return;
+      const r = tr.dataset.range;
+      growthExpanded.has(r) ? growthExpanded.delete(r) : growthExpanded.add(r);
+      renderGrowth();
+    });
+
     // ---- route: no session → sign in on the picker page ----
     function showLogin() { window.location.replace('index.html'); }
     async function showApp() {
       $('appView').classList.remove('hidden');
       try { await loadCrs(); } catch (e) { crsMsg('Could not load CRS data: ' + (e.message || ''), 'err'); }
       try { await loadDraws(); } catch (e) { $('drawsMeta').textContent = 'Could not load draws: ' + (e.message || ''); }
-      try { renderAnalysis(); renderBandAnalysis(); } catch (e) { $('analysisMeta').textContent = 'Could not compute analysis: ' + (e.message || ''); }
+      try { renderAnalysis(); renderBandAnalysis(); renderGrowth(); } catch (e) { $('analysisMeta').textContent = 'Could not compute analysis: ' + (e.message || ''); }
       const h = location.hash.replace('#', '');
-      if (['draws', 'pool', 'analysis'].includes(h)) selectTab(h);
+      if (['draws', 'pool', 'analysis', 'growth'].includes(h)) selectTab(h);
     }
 
     DB.onAuthChange(session => { if (session) showApp(); else showLogin(); });
