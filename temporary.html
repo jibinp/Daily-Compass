@@ -237,9 +237,9 @@
         <div class="tfolder tnode" data-group="g-pr"><span class="tw">▾</span>🇨🇦 Canadian PR</div>
         <div class="tchildren" id="g-pr">
           <a class="tnode active" href="temporary.html#pool"><span class="tw-sp"></span>📈 Pool breakdown</a>
+          <a class="tnode" href="temporary.html#growth"><span class="tw-sp"></span>🌱 Growth</a>
           <a class="tnode" href="temporary.html#draws"><span class="tw-sp"></span>🎯 Draws</a>
           <a class="tnode" href="temporary.html#analysis"><span class="tw-sp"></span>🔍 Analysis</a>
-          <a class="tnode" href="temporary.html#growth"><span class="tw-sp"></span>🌱 Growth</a>
         </div>
       </div>
       <a class="tnode soon"><span class="tw-sp"></span>📊 Stats</a>
@@ -259,9 +259,9 @@
       <!-- tab bar: seasonal / temporary trackers. Drop a new .tab + .tab-panel to add one. -->
       <div class="tabs" id="tabs">
         <button class="tab active" data-tab="pool">📈 Pool breakdown</button>
+        <button class="tab" data-tab="growth">🌱 Growth</button>
         <button class="tab" data-tab="draws">🎯 Draws</button>
         <button class="tab" data-tab="analysis">🔍 Analysis</button>
-        <button class="tab" data-tab="growth">🌱 Growth</button>
       </div>
 
       <!-- ---------- Canadian PR › Pool breakdown ---------- -->
@@ -771,11 +771,12 @@
     // new_entrants = actual_total_B - expected_B
     function renderAnalysis() {
       const t = $('analysisTable');
-      const windows = poolWindows();
-      if (windows.length < 1) {
-        t.innerHTML = '<tbody><tr><td>Need at least 2 pool snapshots to compare. Add more on Pool breakdown.</td></tr></tbody>';
+      const pools = getPoolsSorted();
+      if (!pools.length) {
+        t.innerHTML = '<tbody><tr><td>No pool snapshots yet. Add one on Pool breakdown.</td></tr></tbody>';
         $('analysisMeta').textContent = ''; return;
       }
+      const windows = poolWindows();
       const head = '<thead><tr><th>From</th><th>To</th><th>Pool A</th><th>Draws in window</th><th>Invitations</th>' +
         '<th>Expected pool B</th><th>Actual pool B</th><th>New candidates</th></tr></thead>';
       const rowsHtml = windows.map(({ a, b, windowDraws }) => {
@@ -789,8 +790,23 @@
           `<td class="n">${num(expected)}</td><td class="n">${num(b.total)}</td>` +
           `<td class="n ${cls}">${sign}${num(newCandidates)}</td></tr>`;
       });
-      t.innerHTML = head + '<tbody>' + rowsHtml.reverse().join('') + '</tbody>';   // most recent window first
-      $('analysisMeta').innerHTML = `${windows.length + 1} pool snapshots · ${windows.length} windows compared`;
+
+      // Pending row: latest snapshot → today, using draws since then. No new
+      // snapshot exists yet, so actual/new candidates are unknown ("—").
+      const last = pools[pools.length - 1];
+      const today = new Date().toISOString().slice(0, 10);
+      if (today > last.date) {
+        const pendingDraws = drawsRows.filter(d => d.draw_date > last.date && d.draw_date <= today)
+          .sort((x, y) => x.draw_date < y.draw_date ? -1 : 1);
+        const invitations = pendingDraws.reduce((s, d) => s + (d.invitations || 0), 0);
+        const expected = last.total - invitations;
+        rowsHtml.push(`<tr><td>${fmtDate(last.date)}</td><td>${fmtDate(today)} (today)</td>` +
+          `<td class="n">${num(last.total)}</td><td class="n">${pendingDraws.length}</td><td class="n">${num(invitations)}</td>` +
+          `<td class="n">${num(expected)}</td><td class="n">—</td><td class="n">—</td></tr>`);
+      }
+
+      t.innerHTML = head + '<tbody>' + rowsHtml.reverse().join('') + '</tbody>';   // most recent first
+      $('analysisMeta').innerHTML = `${pools.length} pool snapshots · ${windows.length} windows compared`;
     }
 
     // Skim order across the FULL 15-band hierarchy (subs replace their parent
