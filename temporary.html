@@ -239,7 +239,7 @@
           <a class="tnode active" href="temporary.html#pool"><span class="tw-sp"></span>📈 Pool breakdown</a>
           <a class="tnode" href="temporary.html#growth"><span class="tw-sp"></span>🌱 Growth</a>
           <a class="tnode" href="temporary.html#draws"><span class="tw-sp"></span>🎯 Draws</a>
-          <a class="tnode" href="temporary.html#analysis"><span class="tw-sp"></span>🔍 Analysis</a>
+          <a class="tnode" href="temporary.html#analysis"><span class="tw-sp"></span>🔍 New candidates</a>
         </div>
       </div>
       <a class="tnode soon"><span class="tw-sp"></span>📊 Stats</a>
@@ -261,7 +261,7 @@
         <button class="tab active" data-tab="pool">📈 Pool breakdown</button>
         <button class="tab" data-tab="growth">🌱 Growth</button>
         <button class="tab" data-tab="draws">🎯 Draws</button>
-        <button class="tab" data-tab="analysis">🔍 Analysis</button>
+        <button class="tab" data-tab="analysis">🔍 New candidates</button>
       </div>
 
       <!-- ---------- Canadian PR › Pool breakdown ---------- -->
@@ -946,6 +946,16 @@
           body += `<tr class="${rg.sub ? 'sub' : ''}"><td>${rg.r}</td>${cells}</tr>`;
         }
       }
+      // Total row: raw change in the pool's overall total (top-level bands sum) per date.
+      const totalCells = cols.map(p => {
+        const idx = pools.indexOf(p);
+        if (idx === 0) return '<td>—</td>';
+        const v = p.total - pools[idx - 1].total;
+        const cls = v > 0 ? 'warn' : v < 0 ? 'good' : '';
+        const sign = v > 0 ? '+' : '';
+        return `<td class="${cls}">${sign}${num(v)}</td>`;
+      }).join('');
+      body += `<tr class="total"><td>Total</td>${totalCells}</tr>`;
       t.innerHTML = head + '<tbody>' + body + '</tbody>';
       $('growthMeta').innerHTML = `${pools.length} pool snapshots`;
     }
