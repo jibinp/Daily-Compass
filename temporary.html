@@ -219,6 +219,28 @@
       flex: 0 0 auto;
     }
     .draws-daterange input[type="date"] { flex: 0 0 130px; min-width: 0; }
+    /* ---- stats tiles ---- */
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-top: 12px; }
+    .stat-tile {
+      background: var(--field); border: 1px solid var(--border);
+      border-radius: 12px; padding: 12px 10px; text-align: center;
+    }
+    .stat-tile .v { font-size: 1.2rem; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+    .stat-tile .l { font-size: 0.72rem; color: var(--muted); margin-top: 4px; }
+    /* ---- quota chart ---- */
+    .chart-legend { display: flex; gap: 16px; margin: 10px 0 4px; font-size: 0.82rem; color: var(--muted); }
+    .legend-item { display: flex; align-items: center; gap: 6px; }
+    .swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+    .swatch-issued { background: #3987e5; }
+    .swatch-quota { background: #c98500; }
+    .chart-wrap { overflow-x: auto; margin-top: 4px; }
+    .qbar-label { font-size: 0.68rem; fill: var(--muted); }
+    .qbar-value { font-size: 0.68rem; fill: var(--text); }
+    .qbar { cursor: pointer; }
+    .qbar-group:hover .qbar-tip { opacity: 1; }
+    .qbar-tip { opacity: 0; transition: opacity 0.15s; pointer-events: none; }
+    .qbar-tip rect { fill: var(--card); stroke: var(--border); }
+    .qbar-tip text { fill: var(--text); font-size: 0.72rem; }
     .draws-table td.cat { white-space: normal; min-width: 190px; }
     .draws-table td.n { text-align: right; font-variant-numeric: tabular-nums; }
     .draws-table td.crs, .crs-table td.crs { text-align: right; font-variant-numeric: tabular-nums; color: var(--accent); font-weight: 600; }
@@ -245,6 +267,8 @@
           <a class="tnode" href="temporary.html#growth"><span class="tw-sp"></span>🌱 Growth</a>
           <a class="tnode" href="temporary.html#draws"><span class="tw-sp"></span>🎯 Draws</a>
           <a class="tnode" href="temporary.html#analysis"><span class="tw-sp"></span>🔍 New candidates</a>
+          <a class="tnode" href="temporary.html#stats"><span class="tw-sp"></span>📐 Stats</a>
+          <a class="tnode" href="temporary.html#quota"><span class="tw-sp"></span>📊 Quota</a>
         </div>
       </div>
       <a class="tnode soon"><span class="tw-sp"></span>📊 Stats</a>
@@ -267,6 +291,8 @@
         <button class="tab" data-tab="growth">🌱 Growth</button>
         <button class="tab" data-tab="draws">🎯 Draws</button>
         <button class="tab" data-tab="analysis">🔍 New candidates</button>
+        <button class="tab" data-tab="stats">📐 Stats</button>
+        <button class="tab" data-tab="quota">📊 Quota</button>
       </div>
 
       <!-- ---------- Canadian PR › Pool breakdown ---------- -->
@@ -400,6 +426,65 @@
         </div>
       </section>
 
+      <!-- ---------- Canadian PR › Stats ---------- -->
+      <section class="tab-panel" id="tab-stats">
+        <div class="field">
+          <div class="field-head"><span class="icon">📐</span><span class="label">Draws summary</span></div>
+          <div class="muted-note">Same filters as Draws — shows aggregate stats for the filtered set instead of a row table.</div>
+
+          <div class="draws-filters">
+            <input type="search" id="statsSearch" placeholder="Search category…" />
+            <select id="statsCat"><option value="">All categories</option></select>
+            <select id="statsYear"><option value="">All years</option></select>
+            <div class="draws-daterange">
+              <label class="muted-note" for="statsFrom">From</label>
+              <input type="date" id="statsFrom" />
+              <label class="muted-note" for="statsTo">To</label>
+              <input type="date" id="statsTo" />
+              <button class="mini-btn ghost" id="statsDateClear" title="Clear date filter">✕</button>
+            </div>
+          </div>
+
+          <div class="stats-grid" id="statsGrid"></div>
+        </div>
+      </section>
+
+      <!-- ---------- Canadian PR › Quota ---------- -->
+      <section class="tab-panel" id="tab-quota">
+        <div class="field">
+          <div class="field-head"><span class="icon">📊</span><span class="label">Yearly quota usage</span></div>
+          <div class="muted-note">Enter each year's overall target; the chart compares it to invitations actually issued that year (sum of draws).</div>
+
+          <div class="crs-toolbar">
+            <button class="mini-btn ghost" id="quotaAddToggle">＋ Add / update a year</button>
+          </div>
+          <div id="quotaMsg" class="crs-msg"></div>
+
+          <div id="quotaForm" class="crs-form hidden">
+            <label class="muted-note" for="qfYear">Year</label>
+            <input type="number" id="qfYear" inputmode="numeric" />
+            <label class="muted-note" for="qfQuota">Quota (target invitations)</label>
+            <input type="number" id="qfQuota" inputmode="numeric" />
+            <div class="btn-row">
+              <button class="mini-btn" id="qfSave">Save</button>
+              <button class="mini-btn ghost" id="qfCancel">Cancel</button>
+            </div>
+          </div>
+
+          <div class="chart-legend">
+            <span class="legend-item"><span class="swatch swatch-issued"></span>Issued</span>
+            <span class="legend-item"><span class="swatch swatch-quota"></span>Quota</span>
+          </div>
+          <div class="chart-wrap">
+            <svg id="quotaChart" width="100%" height="280" role="img" aria-label="Yearly invitations issued versus quota"></svg>
+          </div>
+
+          <div class="table-wrap">
+            <table class="draws-table" id="quotaTable"></table>
+          </div>
+        </div>
+      </section>
+
     </div>
   </div>
 
@@ -457,6 +542,15 @@
         const { error } = await supabase.from('crs_draws').upsert(rec, { onConflict: 'draw_number' });
         if (error) throw error;
       },
+      async quotaAll() {
+        const { data, error } = await supabase.from('crs_quota').select('year, quota').order('year', { ascending: true });
+        if (error) throw error;
+        return data;
+      },
+      async quotaUpsert(year, quota) {
+        const { error } = await supabase.from('crs_quota').upsert({ year, quota }, { onConflict: 'year' });
+        if (error) throw error;
+      },
     };
 
     const $ = id => document.getElementById(id);
@@ -491,7 +585,7 @@
     // tree links use #pool / #draws on the same page — switch tab on hash change
     window.addEventListener('hashchange', () => {
       const h = location.hash.replace('#', '');
-      if (['draws', 'pool', 'analysis', 'growth'].includes(h)) selectTab(h);
+      if (['draws', 'pool', 'analysis', 'growth', 'stats', 'quota'].includes(h)) selectTab(h);
     });
 
     $('logoutBtn').addEventListener('click', async () => { await DB.signOut(); });
@@ -608,7 +702,7 @@
           crsMsg(`Updated: pool as of ${fmtDate(res.pool_date)} (${res.rows}/17 bands)${dr}.${partial}`, res.rows < 17 ? 'err' : 'ok');
           await loadCrs();
           try { await loadDraws(); } catch { /* draws table may not exist yet */ }
-          try { renderAnalysis(); renderBandAnalysis(); renderGrowth(); } catch { /* ignore */ }
+          try { renderAnalysis(); renderBandAnalysis(); renderGrowth(); refreshQuota(); } catch { /* ignore */ }
         } else {
           crsMsg('Checked — no data returned.', 'err');
         }
@@ -649,7 +743,7 @@
         crsMsg(`Saved ${distribution.length} counts for ${fmtDate(pool_date)}.`, 'ok');
         $('crsForm').classList.add('hidden');
         await loadCrs();
-        try { renderAnalysis(); renderBandAnalysis(); renderGrowth(); } catch { /* ignore */ }
+        try { renderAnalysis(); renderBandAnalysis(); renderGrowth(); refreshQuota(); } catch { /* ignore */ }
       } catch (e) {
         crsMsg('Save failed: ' + (e.message || ''), 'err');
       } finally { $('crsSave').disabled = false; }
@@ -702,11 +796,59 @@
       $('drawsYear').innerHTML = '<option value="">All years</option>' + years.map(y => `<option>${y}</option>`).join('');
       $('drawTypes').innerHTML = cats.map(c => `<option value="${c.replace(/"/g, '&quot;')}"></option>`).join('');   // Add-form autocomplete
     }
-    async function loadDraws() { drawsRows = await DB.drawsAll(); fillDrawFilters(); renderDrawsTable(); }
+    async function loadDraws() {
+      drawsRows = await DB.drawsAll();
+      fillDrawFilters();
+      renderDrawsTable();
+      fillStatsFilters();
+      renderStats();
+    }
     ['drawsSearch', 'drawsCat', 'drawsYear', 'drawsFrom', 'drawsTo'].forEach(id => $(id).addEventListener('input', renderDrawsTable));
     $('drawsDateClear').addEventListener('click', () => {
       $('drawsFrom').value = ''; $('drawsTo').value = '';
       renderDrawsTable();
+    });
+
+    // ---- stats: same filter shape as Draws, own inputs, summary tiles instead of a table ----
+    function filteredDrawsStats() {
+      const q = ($('statsSearch').value || '').toLowerCase();
+      const cat = $('statsCat').value, yr = $('statsYear').value;
+      const from = $('statsFrom').value, to = $('statsTo').value;
+      return drawsRows.filter(r =>
+        (!q || (r.round_type || '').toLowerCase().includes(q)) &&
+        (!cat || r.round_type === cat) &&
+        (!yr || (r.draw_date || '').startsWith(yr)) &&
+        (!from || r.draw_date >= from) &&
+        (!to || r.draw_date <= to));
+    }
+    function fillStatsFilters() {
+      const cats = [...new Set(drawsRows.map(r => r.round_type).filter(Boolean))].sort();
+      const years = [...new Set(drawsRows.map(r => (r.draw_date || '').slice(0, 4)).filter(Boolean))].sort().reverse();
+      $('statsCat').innerHTML = '<option value="">All categories</option>' + cats.map(c => `<option>${c}</option>`).join('');
+      $('statsYear').innerHTML = '<option value="">All years</option>' + years.map(y => `<option>${y}</option>`).join('');
+    }
+    function renderStats() {
+      const rows = filteredDrawsStats();
+      const g = $('statsGrid');
+      if (!rows.length) { g.innerHTML = '<div class="muted-note">No draws match this filter.</div>'; return; }
+      const crsVals = rows.map(r => r.crs_cutoff).filter(v => v != null);
+      const invSum = rows.reduce((s, r) => s + (r.invitations || 0), 0);
+      const lowest = crsVals.length ? Math.min(...crsVals) : null;
+      const highest = crsVals.length ? Math.max(...crsVals) : null;
+      const avg = crsVals.length ? Math.round(crsVals.reduce((s, v) => s + v, 0) / crsVals.length) : null;
+      const tiles = [
+        ['Total draws', num(rows.length)],
+        ['Total invitations', num(invSum)],
+        ['Lowest CRS cutoff', num(lowest)],
+        ['Highest CRS cutoff', num(highest)],
+        ['Average CRS cutoff', num(avg)],
+      ];
+      g.innerHTML = tiles.map(([l, v]) => `<div class="stat-tile"><div class="v">${v}</div><div class="l">${l}</div></div>`).join('');
+    }
+    ['statsSearch', 'statsCat', 'statsYear', 'statsFrom', 'statsTo'].forEach(id => $(id).addEventListener('input', renderStats));
+    $('statsDateClear').addEventListener('click', () => {
+      $('statsFrom').value = ''; $('statsTo').value = '';
+      renderStats();
     });
 
     $('drawsTable').addEventListener('click', e => {
@@ -727,7 +869,7 @@
           const dbg = !res.drawsCount && res.drawsInfo ? ' · debug: ' + JSON.stringify(res.drawsInfo).slice(0, 1500) : '';
           drawsMsg(`Updated — ${res.drawsCount || 0} draws.${dbg}`, res.drawsCount ? 'ok' : 'err');
           await loadDraws();
-          try { renderAnalysis(); renderBandAnalysis(); renderGrowth(); } catch { /* ignore */ }
+          try { renderAnalysis(); renderBandAnalysis(); renderGrowth(); refreshQuota(); } catch { /* ignore */ }
         }
       } catch (e) {
         drawsMsg('Auto-check unavailable (deploy the crs-refresh function). Add manually. ' + (e.message || ''), 'err');
@@ -757,7 +899,7 @@
         ['dfNum', 'dfType', 'dfInv', 'dfCrs'].forEach(id => $(id).value = '');
         $('drawsForm').classList.add('hidden');
         await loadDraws();
-        try { renderAnalysis(); renderBandAnalysis(); renderGrowth(); } catch { /* ignore */ }
+        try { renderAnalysis(); renderBandAnalysis(); renderGrowth(); refreshQuota(); } catch { /* ignore */ }
       } catch (e) {
         drawsMsg('Save failed: ' + (e.message || ''), 'err');
       } finally { $('dfSave').disabled = false; }
@@ -985,6 +1127,103 @@
       renderGrowth();
     });
 
+    // ---- quota: yearly target vs. actual invitations issued (sum of draws) ----
+    const quotaMsg = (t, k) => { const el = $('quotaMsg'); el.textContent = t || ''; el.className = 'crs-msg' + (k ? ' ' + k : ''); };
+    let quotaRows = [];
+    async function loadQuota() { quotaRows = await DB.quotaAll(); }
+
+    function yearlyIssued() {
+      const byYear = {};
+      for (const d of drawsRows) {
+        const y = (d.draw_date || '').slice(0, 4);
+        if (!y) continue;
+        byYear[y] = (byYear[y] || 0) + (d.invitations || 0);
+      }
+      return byYear;
+    }
+
+    function renderQuotaChart() {
+      const svg = $('quotaChart');
+      const issued = yearlyIssued();
+      const years = [...new Set([...Object.keys(issued), ...quotaRows.map(q => String(q.year))])].sort();
+      if (!years.length) { svg.innerHTML = ''; return; }
+
+      const groupW = 64, barW = 22, gap = 2, padTop = 24, padBottom = 30, chartH = 280;
+      const usableH = chartH - padTop - padBottom;
+      const width = Math.max(years.length * groupW, 200);
+      const maxV = Math.max(1, ...years.map(y => issued[y] || 0), ...quotaRows.map(q => q.quota || 0));
+
+      const bars = years.map((y, i) => {
+        const cx = i * groupW + groupW / 2;
+        const iv = issued[y] || 0;
+        const qv = (quotaRows.find(q => String(q.year) === y) || {}).quota ?? null;
+        const ih = Math.round((iv / maxV) * usableH);
+        const qh = qv != null ? Math.round((qv / maxV) * usableH) : 0;
+        const baseY = chartH - padBottom;
+        const ix = cx - barW - gap / 2, qx = cx + gap / 2;
+        const issuedBar = `<rect class="qbar" x="${ix}" y="${baseY - ih}" width="${barW}" height="${Math.max(ih, 1)}" rx="4" fill="#3987e5"><title>${y} · Issued: ${iv.toLocaleString()}</title></rect>`;
+        const quotaBar = qv != null
+          ? `<rect class="qbar" x="${qx}" y="${baseY - qh}" width="${barW}" height="${Math.max(qh, 1)}" rx="4" fill="#c98500"><title>${y} · Quota: ${qv.toLocaleString()}</title></rect>`
+          : '';
+        const label = `<text class="qbar-label" x="${cx}" y="${chartH - 10}" text-anchor="middle">${y}</text>`;
+        const ivLabel = iv ? `<text class="qbar-value" x="${ix + barW / 2}" y="${baseY - ih - 4}" text-anchor="middle">${iv.toLocaleString()}</text>` : '';
+        const qvLabel = qv != null ? `<text class="qbar-value" x="${qx + barW / 2}" y="${baseY - qh - 4}" text-anchor="middle">${qv.toLocaleString()}</text>` : '';
+        return issuedBar + quotaBar + label + ivLabel + qvLabel;
+      }).join('');
+
+      svg.setAttribute('viewBox', `0 0 ${width} ${chartH}`);
+      svg.setAttribute('height', chartH);
+      svg.innerHTML = `<line x1="0" y1="${chartH - padBottom}" x2="${width}" y2="${chartH - padBottom}" stroke="var(--border)" stroke-width="1" />` + bars;
+    }
+
+    function renderQuotaTable() {
+      const t = $('quotaTable');
+      const issued = yearlyIssued();
+      const years = [...new Set([...Object.keys(issued), ...quotaRows.map(q => String(q.year))])].sort().reverse();
+      if (!years.length) { t.innerHTML = '<tbody><tr><td>No draws or quotas yet.</td></tr></tbody>'; return; }
+      const head = '<thead><tr><th>Year</th><th>Issued</th><th>Quota</th><th>Usage</th></tr></thead>';
+      const body = years.map(y => {
+        const iv = issued[y] || 0;
+        const qv = (quotaRows.find(q => String(q.year) === y) || {}).quota ?? null;
+        const pct = qv ? Math.round((iv / qv) * 100) : null;
+        const cls = pct == null ? '' : pct > 100 ? 'warn' : pct >= 90 ? 'good' : '';
+        return `<tr><td>${y}</td><td class="n">${num(iv)}</td><td class="n">${num(qv)}</td>` +
+          `<td class="n ${cls}">${pct == null ? '—' : pct + '%'}</td></tr>`;
+      }).join('');
+      t.innerHTML = head + '<tbody>' + body + '</tbody>';
+    }
+
+    function refreshQuota() { renderQuotaChart(); renderQuotaTable(); }
+
+    async function openQuotaForm(year) {
+      $('qfYear').value = year || new Date().getFullYear();
+      const existing = quotaRows.find(q => q.year === Number($('qfYear').value));
+      $('qfQuota').value = existing ? existing.quota : '';
+      $('quotaForm').classList.remove('hidden');
+    }
+    $('quotaAddToggle').addEventListener('click', () => {
+      if ($('quotaForm').classList.contains('hidden')) openQuotaForm();
+      else $('quotaForm').classList.add('hidden');
+    });
+    $('qfYear').addEventListener('change', () => openQuotaForm($('qfYear').value));
+    $('qfCancel').addEventListener('click', () => $('quotaForm').classList.add('hidden'));
+    $('qfSave').addEventListener('click', async () => {
+      const year = parseInt($('qfYear').value, 10);
+      const quota = parseInt($('qfQuota').value, 10);
+      if (!Number.isInteger(year) || !Number.isInteger(quota)) { quotaMsg('Enter a valid year and quota.', 'err'); return; }
+      $('qfSave').disabled = true;
+      quotaMsg('Saving…', '');
+      try {
+        await DB.quotaUpsert(year, quota);
+        quotaMsg(`Saved quota for ${year}.`, 'ok');
+        $('quotaForm').classList.add('hidden');
+        await loadQuota();
+        refreshQuota();
+      } catch (e) {
+        quotaMsg('Save failed: ' + (e.message || ''), 'err');
+      } finally { $('qfSave').disabled = false; }
+    });
+
     // ---- route: no session → sign in on the picker page ----
     function showLogin() { window.location.replace('index.html'); }
     async function showApp() {
@@ -992,8 +1231,9 @@
       try { await loadCrs(); } catch (e) { crsMsg('Could not load CRS data: ' + (e.message || ''), 'err'); }
       try { await loadDraws(); } catch (e) { $('drawsMeta').textContent = 'Could not load draws: ' + (e.message || ''); }
       try { renderAnalysis(); renderBandAnalysis(); renderGrowth(); } catch (e) { $('analysisMeta').textContent = 'Could not compute analysis: ' + (e.message || ''); }
+      try { await loadQuota(); refreshQuota(); } catch (e) { quotaMsg('Could not load quota: ' + (e.message || ''), 'err'); }
       const h = location.hash.replace('#', '');
-      if (['draws', 'pool', 'analysis', 'growth'].includes(h)) selectTab(h);
+      if (['draws', 'pool', 'analysis', 'growth', 'stats', 'quota'].includes(h)) selectTab(h);
     }
 
     DB.onAuthChange(session => { if (session) showApp(); else showLogin(); });
