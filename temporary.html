@@ -1210,23 +1210,30 @@
       const t = $('quotaTable');
       const years = allYears().slice().reverse();
       if (!years.length) { t.innerHTML = '<tbody><tr><td>No draws or quotas yet.</td></tr></tbody>'; return; }
-      const head = '<thead><tr><th>Year</th><th>Category</th><th>Issued</th><th>Quota</th><th>Usage</th></tr></thead>';
+      const head = '<thead><tr><th>Year</th><th>Category</th><th>Invitations</th><th>Total IRCC invitations</th>' +
+        '<th>% of total</th><th>Quota</th><th>Usage</th></tr></thead>';
+      const pctCell = (part, whole) => {
+        const pct = whole ? Math.round((part / whole) * 100) : null;
+        return `<td class="n">${pct == null ? '—' : pct + '%'}</td>`;
+      };
       const usageCell = (iv, qv) => {
         const pct = qv ? Math.round((iv / qv) * 100) : null;
         const cls = pct == null ? '' : pct > 100 ? 'warn' : pct >= 90 ? 'good' : '';
         return `<td class="n ${cls}">${pct == null ? '—' : pct + '%'}</td>`;
       };
       const body = years.map(y => {
+        const yearTotal = yearlyIssued()[y] || 0;
         const cats = quotaRows.filter(q => String(q.year) === y && !isTotalCat(q.category))
           .sort((a, b) => a.category < b.category ? -1 : 1);
         const catRows = cats.map(q => {
           const iv = issuedFor(y, q.category);
           return `<tr><td>${y}</td><td class="cat">${q.category}</td><td class="n">${num(iv)}</td>` +
-            `<td class="n">${num(q.quota)}</td>${usageCell(iv, q.quota)}</tr>`;
+            `<td class="n">${num(yearTotal)}</td>${pctCell(iv, yearTotal)}<td class="n">${num(q.quota)}</td>${usageCell(iv, q.quota)}</tr>`;
         }).join('');
         const tot = effectiveTotalQuota(y);
         const totalRow = `<tr class="total"><td>${y}</td><td class="cat">Total${tot.computed ? ' (sum)' : ''}</td>` +
-          `<td class="n">${num(yearlyIssued()[y])}</td><td class="n">${num(tot.value)}</td>${usageCell(yearlyIssued()[y] || 0, tot.value)}</tr>`;
+          `<td class="n">${num(yearTotal)}</td><td class="n">${num(yearTotal)}</td>${pctCell(yearTotal, yearTotal)}` +
+          `<td class="n">${num(tot.value)}</td>${usageCell(yearTotal, tot.value)}</tr>`;
         return catRows + totalRow;
       }).join('');
       t.innerHTML = head + '<tbody>' + body + '</tbody>';
