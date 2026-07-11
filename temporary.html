@@ -160,7 +160,7 @@
     .crs-table th:last-child, .crs-table td:last-child { border-right: none; }
     .crs-table th { color: var(--muted); font-weight: 600; }
     .crs-table td:last-child, .crs-table th:last-child { text-align: right; font-variant-numeric: tabular-nums; }
-    .crs-table tr.total td { font-weight: 700; color: var(--accent); border-top: 1px solid var(--border); }
+    .crs-table tr.total td, .draws-table tr.total td { font-weight: 700; color: var(--accent); border-top: 1px solid var(--border); }
     .crs-table tr.sub td:first-child { padding-left: 24px; color: var(--muted); font-size: 0.82rem; }
     .crs-table tr.grp { cursor: pointer; }
     .crs-table tr.grp:hover td:first-child { color: var(--accent); }
@@ -461,6 +461,9 @@
           <div id="quotaForm" class="crs-form hidden">
             <label class="muted-note" for="qfYear">Year</label>
             <input type="number" id="qfYear" inputmode="numeric" />
+            <label class="muted-note" for="qfCategory">Category</label>
+            <input type="text" id="qfCategory" list="quotaCategories" placeholder="Total, Canadian Experience Class, …" />
+            <datalist id="quotaCategories"></datalist>
             <label class="muted-note" for="qfQuota">Quota (target invitations)</label>
             <input type="number" id="qfQuota" inputmode="numeric" />
             <div class="btn-row">
@@ -541,12 +544,13 @@
         if (error) throw error;
       },
       async quotaAll() {
-        const { data, error } = await supabase.from('crs_quota').select('year, quota').order('year', { ascending: true });
+        const { data, error } = await supabase.from('crs_quota')
+          .select('year, category, quota').order('year', { ascending: true }).order('category', { ascending: true });
         if (error) throw error;
         return data;
       },
-      async quotaUpsert(year, quota) {
-        const { error } = await supabase.from('crs_quota').upsert({ year, quota }, { onConflict: 'year' });
+      async quotaUpsert(year, category, quota) {
+        const { error } = await supabase.from('crs_quota').upsert({ year, category, quota }, { onConflict: 'year,category' });
         if (error) throw error;
       },
     };
@@ -1124,6 +1128,10 @@
     let quotaRows = [];
     async function loadQuota() { quotaRows = await DB.quotaAll(); }
 
+    const isTotalCat = c => (c || '').trim().toLowerCase() === 'total';
+
+    // sum of ALL draws' invitations for a year — the objective total, regardless
+    // of whether every draw's round_type has a matching quota category entered.
     function yearlyIssued() {
       const byYear = {};
       for (const d of drawsRows) {
@@ -1133,29 +1141,47 @@
       }
       return byYear;
     }
+    // sum of a specific category's (round_type's) invitations for a year.
+    function issuedFor(year, category) {
+      return drawsRows.filter(d => (d.draw_date || '').startsWith(year) && d.round_type === category)
+        .reduce((s, d) => s + (d.invitations || 0), 0);
+    }
+    // Total quota for a year: an explicit 'Total' entry wins; otherwise it's the
+    // sum of that year's per-category entries (a computed estimate).
+    function effectiveTotalQuota(year) {
+      const explicit = quotaRows.find(q => String(q.year) === year && isTotalCat(q.category));
+      if (explicit) return { value: explicit.quota, computed: false };
+      const cats = quotaRows.filter(q => String(q.year) === year && !isTotalCat(q.category));
+      if (!cats.length) return { value: null, computed: false };
+      return { value: cats.reduce((s, q) => s + (q.quota || 0), 0), computed: true };
+    }
+    function allYears() {
+      return [...new Set([...Object.keys(yearlyIssued()), ...quotaRows.map(q => String(q.year))])].sort();
+    }
 
     function renderQuotaChart() {
       const svg = $('quotaChart');
       const issued = yearlyIssued();
-      const years = [...new Set([...Object.keys(issued), ...quotaRows.map(q => String(q.year))])].sort();
+      const years = allYears();
       if (!years.length) { svg.innerHTML = ''; return; }
 
       const groupW = 64, barW = 22, gap = 2, padTop = 24, padBottom = 30, chartH = 280;
       const usableH = chartH - padTop - padBottom;
       const width = Math.max(years.length * groupW, 200);
-      const maxV = Math.max(1, ...years.map(y => issued[y] || 0), ...quotaRows.map(q => q.quota || 0));
+      const quotaVals = years.map(y => effectiveTotalQuota(y).value || 0);
+      const maxV = Math.max(1, ...years.map(y => issued[y] || 0), ...quotaVals);
 
       const bars = years.map((y, i) => {
         const cx = i * groupW + groupW / 2;
         const iv = issued[y] || 0;
-        const qv = (quotaRows.find(q => String(q.year) === y) || {}).quota ?? null;
+        const qv = effectiveTotalQuota(y).value;
         const ih = Math.round((iv / maxV) * usableH);
         const qh = qv != null ? Math.round((qv / maxV) * usableH) : 0;
         const baseY = chartH - padBottom;
         const ix = cx - barW - gap / 2, qx = cx + gap / 2;
         const issuedBar = `<rect class="qbar" x="${ix}" y="${baseY - ih}" width="${barW}" height="${Math.max(ih, 1)}" rx="4" fill="#3987e5"><title>${y} · Issued: ${iv.toLocaleString()}</title></rect>`;
         const quotaBar = qv != null
-          ? `<rect class="qbar" x="${qx}" y="${baseY - qh}" width="${barW}" height="${Math.max(qh, 1)}" rx="4" fill="#c98500"><title>${y} · Quota: ${qv.toLocaleString()}</title></rect>`
+          ? `<rect class="qbar" x="${qx}" y="${baseY - qh}" width="${barW}" height="${Math.max(qh, 1)}" rx="4" fill="#c98500"><title>${y} · Quota (Total): ${qv.toLocaleString()}</title></rect>`
           : '';
         const label = `<text class="qbar-label" x="${cx}" y="${chartH - 10}" text-anchor="middle">${y}</text>`;
         const ivLabel = iv ? `<text class="qbar-value" x="${ix + barW / 2}" y="${baseY - ih - 4}" text-anchor="middle">${iv.toLocaleString()}</text>` : '';
@@ -1170,26 +1196,40 @@
 
     function renderQuotaTable() {
       const t = $('quotaTable');
-      const issued = yearlyIssued();
-      const years = [...new Set([...Object.keys(issued), ...quotaRows.map(q => String(q.year))])].sort().reverse();
+      const years = allYears().slice().reverse();
       if (!years.length) { t.innerHTML = '<tbody><tr><td>No draws or quotas yet.</td></tr></tbody>'; return; }
-      const head = '<thead><tr><th>Year</th><th>Issued</th><th>Quota</th><th>Usage</th></tr></thead>';
-      const body = years.map(y => {
-        const iv = issued[y] || 0;
-        const qv = (quotaRows.find(q => String(q.year) === y) || {}).quota ?? null;
+      const head = '<thead><tr><th>Year</th><th>Category</th><th>Issued</th><th>Quota</th><th>Usage</th></tr></thead>';
+      const usageCell = (iv, qv) => {
         const pct = qv ? Math.round((iv / qv) * 100) : null;
         const cls = pct == null ? '' : pct > 100 ? 'warn' : pct >= 90 ? 'good' : '';
-        return `<tr><td>${y}</td><td class="n">${num(iv)}</td><td class="n">${num(qv)}</td>` +
-          `<td class="n ${cls}">${pct == null ? '—' : pct + '%'}</td></tr>`;
+        return `<td class="n ${cls}">${pct == null ? '—' : pct + '%'}</td>`;
+      };
+      const body = years.map(y => {
+        const cats = quotaRows.filter(q => String(q.year) === y && !isTotalCat(q.category))
+          .sort((a, b) => a.category < b.category ? -1 : 1);
+        const catRows = cats.map(q => {
+          const iv = issuedFor(y, q.category);
+          return `<tr><td>${y}</td><td class="cat">${q.category}</td><td class="n">${num(iv)}</td>` +
+            `<td class="n">${num(q.quota)}</td>${usageCell(iv, q.quota)}</tr>`;
+        }).join('');
+        const tot = effectiveTotalQuota(y);
+        const totalRow = `<tr class="total"><td>${y}</td><td class="cat">Total${tot.computed ? ' (sum)' : ''}</td>` +
+          `<td class="n">${num(yearlyIssued()[y])}</td><td class="n">${num(tot.value)}</td>${usageCell(yearlyIssued()[y] || 0, tot.value)}</tr>`;
+        return catRows + totalRow;
       }).join('');
       t.innerHTML = head + '<tbody>' + body + '</tbody>';
     }
 
-    function refreshQuota() { renderQuotaChart(); renderQuotaTable(); }
+    function refreshQuota() { renderQuotaChart(); renderQuotaTable(); fillQuotaCategories(); }
+    function fillQuotaCategories() {
+      const cats = [...new Set(drawsRows.map(r => r.round_type).filter(Boolean))].sort();
+      $('quotaCategories').innerHTML = ['Total', ...cats].map(c => `<option value="${c.replace(/"/g, '&quot;')}"></option>`).join('');
+    }
 
-    async function openQuotaForm(year) {
+    function openQuotaForm(year, category) {
       $('qfYear').value = year || new Date().getFullYear();
-      const existing = quotaRows.find(q => q.year === Number($('qfYear').value));
+      $('qfCategory').value = category || 'Total';
+      const existing = quotaRows.find(q => q.year === Number($('qfYear').value) && q.category === $('qfCategory').value);
       $('qfQuota').value = existing ? existing.quota : '';
       $('quotaForm').classList.remove('hidden');
     }
@@ -1197,17 +1237,19 @@
       if ($('quotaForm').classList.contains('hidden')) openQuotaForm();
       else $('quotaForm').classList.add('hidden');
     });
-    $('qfYear').addEventListener('change', () => openQuotaForm($('qfYear').value));
+    ['qfYear', 'qfCategory'].forEach(id =>
+      $(id).addEventListener('change', () => openQuotaForm($('qfYear').value, $('qfCategory').value)));
     $('qfCancel').addEventListener('click', () => $('quotaForm').classList.add('hidden'));
     $('qfSave').addEventListener('click', async () => {
       const year = parseInt($('qfYear').value, 10);
+      const category = ($('qfCategory').value || '').trim() || 'Total';
       const quota = parseInt($('qfQuota').value, 10);
       if (!Number.isInteger(year) || !Number.isInteger(quota)) { quotaMsg('Enter a valid year and quota.', 'err'); return; }
       $('qfSave').disabled = true;
       quotaMsg('Saving…', '');
       try {
-        await DB.quotaUpsert(year, quota);
-        quotaMsg(`Saved quota for ${year}.`, 'ok');
+        await DB.quotaUpsert(year, category, quota);
+        quotaMsg(`Saved ${category} quota for ${year}.`, 'ok');
         $('quotaForm').classList.add('hidden');
         await loadQuota();
         refreshQuota();

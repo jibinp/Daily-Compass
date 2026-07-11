@@ -1,9 +1,15 @@
--- Yearly Express Entry admissions quota (one overall target per year).
+-- Express Entry admissions quota, per category per year. Use category
+-- 'Total' for an explicit overall target; per-category rows (matching a
+-- draw's round_type) let usage be tracked separately.
 -- Run in Supabase → SQL Editor.
+-- (Upgrading an existing year-only crs_quota table? Run
+--  crs_quota_migrate_category.sql instead.)
 
 create table if not exists crs_quota (
-  year  int primary key,
-  quota int not null
+  year     int not null,
+  category text not null default 'Total',
+  quota    int not null,
+  primary key (year, category)
 );
 
 alter table crs_quota enable row level security;
