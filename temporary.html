@@ -18,11 +18,8 @@
       --err: #f87171;
     }
     * { box-sizing: border-box; }
-    html { color-scheme: dark; scrollbar-color: var(--card) var(--bg); }
-    ::-webkit-scrollbar { width: 8px; height: 8px; }
-    ::-webkit-scrollbar-track { background: var(--bg); }
-    ::-webkit-scrollbar-thumb { background: var(--card); border-radius: 8px; }
-    ::-webkit-scrollbar-thumb:hover { background: var(--border); }
+    html { color-scheme: dark; scrollbar-width: none; }
+    ::-webkit-scrollbar { display: none; width: 0; height: 0; }
     body {
       margin: 0;
       font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
