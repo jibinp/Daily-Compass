@@ -196,11 +196,8 @@
       <!-- ---------- Manage supplements ---------- -->
       <section class="field">
         <div class="field-head"><span class="icon">💊</span><span class="label">Supplements</span></div>
-        <div class="muted-note">The fixed list you take. Archive one instead of deleting it — history stays intact. Daily taken/not-taken entry happens on <a href="health-log.html" style="color:var(--accent);">Health Log - Data Entry</a>.</div>
+        <div class="muted-note">Adding new supplements and daily taken/not-taken entry both happen on <a href="health-log.html" style="color:var(--accent);">Health Log - Data Entry</a>. Edit or archive existing ones here — history stays intact.</div>
 
-        <div class="crs-toolbar">
-          <button class="mini-btn ghost" id="suppAddToggle">＋ Add supplement</button>
-        </div>
         <div id="suppMsg" class="crs-msg"></div>
 
         <div id="suppForm" class="crs-form hidden">
@@ -306,18 +303,14 @@
     // Manage supplements
     // ================================================================
     function openSuppForm(s) {
-      $('sfOrigName').value = s ? s.name : '';
-      $('sfName').value = s ? s.name : '';
-      $('sfDose').value = s ? (s.dose || '') : '';
-      $('sfNotes').value = s ? (s.notes || '') : '';
+      $('sfOrigName').value = s.name;
+      $('sfName').value = s.name;
+      $('sfDose').value = s.dose || '';
+      $('sfNotes').value = s.notes || '';
       $('suppForm').classList.remove('hidden');
       suppMsg('', '');
       $('sfName').focus();
     }
-    $('suppAddToggle').addEventListener('click', () => {
-      if ($('suppForm').classList.contains('hidden')) openSuppForm(null);
-      else $('suppForm').classList.add('hidden');
-    });
     $('sfCancel').addEventListener('click', () => $('suppForm').classList.add('hidden'));
     $('sfSave').addEventListener('click', async () => {
       const name = $('sfName').value.trim();
@@ -346,7 +339,7 @@
       const t = $('suppTable');
       let html = '<thead><tr><th>Name</th><th>Dose</th><th>Notes</th><th>Status</th><th></th></tr></thead><tbody>';
       if (!supplements.length) {
-        html += '<tr><td colspan="5" class="muted-note">No supplements yet — click "+ Add supplement" above to add your first one.</td></tr>';
+        html += '<tr><td colspan="5" class="muted-note">No supplements yet — add one on Health Log - Data Entry.</td></tr>';
       }
       for (const s of supplements) {
         html += `<tr class="${s.active ? '' : 'archived'}">
@@ -423,7 +416,6 @@
       try {
         await loadSupplements();
         await loadHistory();
-        if (!supplements.length) openSuppForm(null);   // nothing to show yet — open the add form directly
       } catch (e) {
         suppMsg('Could not load: ' + (e.message || ''), 'err');
       }

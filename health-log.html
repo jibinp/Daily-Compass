@@ -286,6 +286,25 @@
     .check-row .cr-dose { color: var(--muted); font-size: 0.82rem; margin-left: 6px; }
     .check-row.taken { border-color: var(--ok); }
     .empty-note { color: var(--muted); font-size: 0.85rem; padding: 8px 0; }
+    .crs-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0 8px; }
+    .mini-btn {
+      background: var(--accent); color: #04283a; border: none;
+      border-radius: 8px; padding: 7px 12px; font-weight: 700;
+      font-size: 0.8rem; cursor: pointer; white-space: nowrap;
+    }
+    .mini-btn:active { background: var(--accent-press); transform: scale(0.97); }
+    .mini-btn.ghost { background: var(--field); color: var(--text); border: 1px solid var(--border); }
+    .crs-form { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+    .crs-form input, .crs-form textarea {
+      background: var(--field); border: 1px solid var(--border);
+      color: var(--text); border-radius: 8px; padding: 9px 10px;
+      font-size: 0.88rem; color-scheme: dark; width: 100%; font-family: inherit;
+    }
+    .crs-form textarea { resize: vertical; }
+    .crs-form input:focus, .crs-form textarea:focus { outline: none; border-color: var(--accent); }
+    .crs-msg { font-size: 0.83rem; margin: 6px 0; min-height: 1.1em; }
+    .crs-msg.ok { color: var(--ok); }
+    .crs-msg.err { color: var(--err); }
   </style>
 </head>
 <body>
@@ -393,6 +412,22 @@
 
           <div class="field">
             <div class="field-head"><span class="icon">💊</span><span class="label">Supplement Tracker</span></div>
+
+            <div class="crs-toolbar">
+              <button class="mini-btn ghost" id="suppAddToggle">＋ Add supplement</button>
+            </div>
+            <div id="suppFormMsg" class="crs-msg"></div>
+            <div id="suppForm" class="crs-form hidden">
+              <label class="muted-note" for="sfName">Name</label>
+              <input type="text" id="sfName" placeholder="e.g. Vitamin D3" />
+              <label class="muted-note" for="sfDose">Dose</label>
+              <input type="text" id="sfDose" placeholder="e.g. 2000 IU" />
+              <div class="btn-row">
+                <button class="mini-btn" id="sfSave">Save</button>
+                <button class="mini-btn ghost" id="sfCancel">Cancel</button>
+              </div>
+            </div>
+
             <div class="checklist" id="suppChecklist"></div>
           </div>
         </section>
@@ -580,6 +615,12 @@
         const { error } = await supabase.from('supplement_log').upsert({
           log_date, supplement, taken, taken_at: new Date().toISOString(),
         }, { onConflict: 'log_date,supplement' });
+        if (error) throw error;
+      },
+      async supplementUpsert({ name, dose, sort_order }) {
+        const { error } = await supabase.from('supplements').upsert({
+          name, dose: dose || null, active: true, sort_order: sort_order ?? 0,
+        }, { onConflict: 'name' });
         if (error) throw error;
       },
     };
@@ -814,7 +855,7 @@
       try {
         if (!activeSupplements.length) activeSupplements = await DB.activeSupplements();
         if (!activeSupplements.length) {
-          el.innerHTML = '<div class="empty-note">No active supplements — add one on the Supplement Tracker page.</div>';
+          el.innerHTML = '<div class="empty-note">No active supplements — click "+ Add supplement" above.</div>';
           return;
         }
         const rows = await DB.supplementLogForDate(logDate);
@@ -843,6 +884,31 @@
         el.innerHTML = '<div class="empty-note">Could not load supplements: ' + e.message + '</div>';
       }
     }
+
+    function suppFormMsg(text, kind) {
+      const el = $('suppFormMsg'); el.textContent = text || '';
+      el.className = 'crs-msg' + (kind ? ' ' + kind : '');
+    }
+    $('suppAddToggle').addEventListener('click', () => {
+      $('suppForm').classList.toggle('hidden');
+      if (!$('suppForm').classList.contains('hidden')) { $('sfName').value = ''; $('sfDose').value = ''; suppFormMsg('', ''); $('sfName').focus(); }
+    });
+    $('sfCancel').addEventListener('click', () => $('suppForm').classList.add('hidden'));
+    $('sfSave').addEventListener('click', async () => {
+      const name = $('sfName').value.trim();
+      if (!name) { suppFormMsg('Name is required.', 'err'); return; }
+      $('sfSave').disabled = true;
+      suppFormMsg('Saving…', '');
+      try {
+        await DB.supplementUpsert({ name, dose: $('sfDose').value.trim(), sort_order: activeSupplements.length });
+        activeSupplements = [];   // force a refetch so the new one shows up
+        $('suppForm').classList.add('hidden');
+        suppFormMsg('', '');
+        await loadSupplementChecklist($('logDate').value);
+      } catch (e) {
+        suppFormMsg('Save failed: ' + (e.message || ''), 'err');
+      } finally { $('sfSave').disabled = false; }
+    });
 
     $('logDate').addEventListener('change', () => { loadDay($('logDate').value); loadSupplementChecklist($('logDate').value); });
     $('todayBtn').addEventListener('click', () => {
