@@ -734,10 +734,15 @@
     });
 
     // Load the times already saved for the chosen log date into the fields.
+    // aspect -> what was actually loaded (iso datetime + reduction), so Save can
+    // tell an unedited field apart from a real change and skip the "already
+    // logged" prompt for anything the user didn't touch.
+    let loadedValues = {};
     async function loadDay(logDate) {
       FIELDS.forEach(f => { $(f.id).value = ''; });   // clear first
       TZ_FIELDS.forEach(id => { if ($('tz_' + id)) $('tz_' + id).value = currentTz; });  // reset zones to default
       $('wakeupRedH').value = ''; $('wakeupRedM').value = '';
+      loadedValues = {};
       if (!logDate) return;
       try {
         const rows = await DB.dayEvents(logDate);
@@ -746,6 +751,7 @@
           const tz = r.tz || currentTz;
           if ($('tz_' + r.aspect)) $('tz_' + r.aspect).value = tz;
           $(r.aspect).value = isoToZonedLocal(r.datetime, tz);
+          loadedValues[r.aspect] = { iso: r.datetime, reduction_min: r.reduction_min || 0 };
           if (r.aspect === 'wakeup' && r.reduction_min) {
             $('wakeupRedH').value = Math.floor(r.reduction_min / 60) || '';
             $('wakeupRedM').value = r.reduction_min % 60 || '';
@@ -770,10 +776,29 @@
     $('saveBtn').addEventListener('click', async () => {
       const logDate = $('logDate').value;              // the log day (YYYY-MM-DD)
       if (!logDate) { msg($('saveMsg'), 'Pick the log date at top.', 'err'); return; }
-      const toSave = FIELDS
+      const wakeupReduction = (parseInt($('wakeupRedH').value, 10) || 0) * 60 + (parseInt($('wakeupRedM').value, 10) || 0);
+      const filled = FIELDS
         .map(f => ({ ...f, value: $(f.id).value }))
         .filter(f => f.value);
-      if (!toSave.length) { msg($('saveMsg'), 'Fill at least one field.', 'err'); return; }
+      if (!filled.length) { msg($('saveMsg'), 'Fill at least one field.', 'err'); return; }
+
+      // Compute each filled field's UTC instant now, then drop anything that's
+      // identical to what was loaded — an untouched field shouldn't trigger an
+      // "already logged" prompt or a needless DB write.
+      const withIso = filled.map(f => {
+        const tz = fieldTz(f.id);
+        const iso = zonedToUtc(f.value, tz).toISOString();
+        const reduction_min = f.id === 'wakeup' ? (wakeupReduction || null) : undefined;
+        return { ...f, tz, iso, reduction_min };
+      });
+      const toSave = withIso.filter(f => {
+        const loaded = loadedValues[f.id];
+        if (!loaded) return true;   // new entry for this aspect — always save
+        const sameTime = loaded.iso === f.iso;
+        const sameReduction = f.id !== 'wakeup' || (loaded.reduction_min || 0) === (f.reduction_min || 0);
+        return !(sameTime && sameReduction);
+      });
+      if (!toSave.length) { msg($('saveMsg'), 'No changes to save.', ''); return; }
 
       $('saveBtn').disabled = true;
       msg($('saveMsg'), 'Checking…', '');
@@ -798,20 +823,18 @@
         }
 
         msg($('saveMsg'), 'Saving…', '');
-        const wakeupReduction = (parseInt($('wakeupRedH').value, 10) || 0) * 60 + (parseInt($('wakeupRedM').value, 10) || 0);
         for (const p of plan) {
-          const tz = fieldTz(p.f.id);                          // zone this event happened in
-          const iso = zonedToUtc(p.f.value, tz).toISOString();  // wall-clock in that zone → UTC
-          const reduction_min = p.f.id === 'wakeup' ? (wakeupReduction || null) : undefined;
+          const f = p.f;
           if (p.existingId) {
-            await DB.updateEvent(p.existingId, { datetime: iso, title: p.f.label, tz, ...(p.f.id === 'wakeup' ? { reduction_min } : {}) });
+            await DB.updateEvent(p.existingId, { datetime: f.iso, title: f.label, tz: f.tz, ...(f.id === 'wakeup' ? { reduction_min: f.reduction_min } : {}) });
           } else {
-            await DB.addEvent({ aspect: p.f.id, title: p.f.label, datetime: iso, log_date: logDate, tz, reduction_min });
+            await DB.addEvent({ aspect: f.id, title: f.label, datetime: f.iso, log_date: logDate, tz: f.tz, reduction_min: f.reduction_min });
           }
         }
         msg($('saveMsg'), `Saved ${plan.length} entr${plan.length === 1 ? 'y' : 'ies'}.`, 'ok');
         FIELDS.forEach(f => { $(f.id).value = ''; });
         $('wakeupRedH').value = ''; $('wakeupRedM').value = '';
+        loadedValues = {};
         await refreshFasting();
         await refreshSleepLast();
         await renderDataTable();
