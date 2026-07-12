@@ -751,7 +751,10 @@
           const tz = r.tz || currentTz;
           if ($('tz_' + r.aspect)) $('tz_' + r.aspect).value = tz;
           $(r.aspect).value = isoToZonedLocal(r.datetime, tz);
-          loadedValues[r.aspect] = { iso: r.datetime, reduction_min: r.reduction_min || 0 };
+          // compare at the input-value level (minute precision, same as the field) —
+          // the stored ISO usually carries seconds that datetime-local can't show,
+          // so comparing raw ISO strings would flag every unedited field as "changed"
+          loadedValues[r.aspect] = { localValue: $(r.aspect).value, tz, reduction_min: r.reduction_min || 0 };
           if (r.aspect === 'wakeup' && r.reduction_min) {
             $('wakeupRedH').value = Math.floor(r.reduction_min / 60) || '';
             $('wakeupRedM').value = r.reduction_min % 60 || '';
@@ -794,7 +797,7 @@
       const toSave = withIso.filter(f => {
         const loaded = loadedValues[f.id];
         if (!loaded) return true;   // new entry for this aspect — always save
-        const sameTime = loaded.iso === f.iso;
+        const sameTime = loaded.localValue === f.value && loaded.tz === f.tz;
         const sameReduction = f.id !== 'wakeup' || (loaded.reduction_min || 0) === (f.reduction_min || 0);
         return !(sameTime && sameReduction);
       });
