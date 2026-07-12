@@ -239,6 +239,15 @@
         </div>
       </section>
 
+      <!-- ---------- Received ---------- -->
+      <section class="field">
+        <div class="field-head"><span class="icon">📦</span><span class="label">Received</span></div>
+        <div class="muted-note">When each tablet was last restocked. Log a new arrival on <a href="health-log.html" style="color:var(--accent);">Health Log - Data Entry</a>.</div>
+        <div class="table-wrap">
+          <table class="supp-table" id="recvTable"></table>
+        </div>
+      </section>
+
     </div>
   </div>
 
@@ -290,6 +299,12 @@
         }));
         const ins = await supabase.from('supplement_ingredients').insert(rows);
         if (ins.error) throw ins.error;
+      },
+      async receivedAll() {
+        const { data, error } = await supabase.from('supplement_received')
+          .select('supplement, received_date').order('received_date', { ascending: false });
+        if (error) throw error;
+        return data;
       },
       async logSince(fromDate) {
         const { data, error } = await supabase.from('supplement_log')
@@ -471,6 +486,23 @@
       t.innerHTML = html;
     }
 
+    // ================================================================
+    // Received (restock log)
+    // ================================================================
+    async function loadReceived() {
+      const rows = await DB.receivedAll();
+      const t = $('recvTable');
+      let html = '<thead><tr><th>Tablet</th><th>Date received</th></tr></thead><tbody>';
+      if (!rows.length) {
+        html += '<tr><td colspan="2" class="muted-note">No entries yet.</td></tr>';
+      }
+      for (const r of rows) {
+        html += `<tr><td>${r.supplement}</td><td>${r.received_date}</td></tr>`;
+      }
+      html += '</tbody>';
+      t.innerHTML = html;
+    }
+
     // ---- route: no session → sign in on the picker page ----
     function showLogin() { window.location.replace('index.html'); }
     async function showApp() {
@@ -478,6 +510,7 @@
       try {
         await loadSupplements();
         await loadHistory();
+        await loadReceived();
       } catch (e) {
         suppMsg('Could not load: ' + (e.message || ''), 'err');
       }
