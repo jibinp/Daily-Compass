@@ -1,0 +1,526 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Health Log - Supplement Tracker — Daily Compass</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --field: #0f172a;
+      --border: #334155;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-press: #0ea5e9;
+      --ok: #22c55e;
+      --err: #f87171;
+    }
+    * { box-sizing: border-box; }
+    html { color-scheme: dark; scrollbar-width: none; }
+    ::-webkit-scrollbar { display: none; width: 0; height: 0; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding-bottom: 48px;
+    }
+    .wrap { width: 100%; max-width: 1000px; padding: 20px 20px 0; }
+    .field {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 14px; padding: 16px; margin-bottom: 14px;
+    }
+    .field-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+    .icon { font-size: 1.3rem; }
+    .label { font-weight: 600; font-size: 1.05rem; }
+    .muted-note { color: var(--muted); font-size: 0.85rem; line-height: 1.5; }
+    .hidden { display: none !important; }
+    /* topbar */
+    .topbar {
+      position: sticky; top: 0; z-index: 50;
+      width: 100%;
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 0.85rem; color: var(--muted);
+      padding: 12px 20px; border-bottom: 1px solid var(--border);
+      background: var(--bg);
+    }
+    .topbar-title { font-weight: 700; font-size: 1rem; color: var(--text); }
+    .link-btn {
+      background: none; border: none; color: var(--accent);
+      cursor: pointer; font-size: 0.8rem; padding: 0;
+    }
+    /* ---- side drawer nav ---- */
+    .hamburger {
+      background: none; border: none; color: var(--text);
+      font-size: 1.4rem; line-height: 1; cursor: pointer; padding: 0;
+    }
+    .sidebar {
+      position: fixed; top: 0; left: 0; bottom: 0; width: 260px; max-width: 82vw;
+      background: var(--card); border-right: 1px solid var(--border);
+      transform: translateX(-100%); transition: transform 0.22s ease;
+      z-index: 110; display: flex; flex-direction: column; gap: 4px;
+      padding: 16px 12px;
+    }
+    .sidebar.open { transform: translateX(0); }
+    .sidebar-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 4px 8px 6px; margin-bottom: 8px;
+    }
+    .sidebar-title { font-weight: 700; font-size: 1.05rem; }
+    .sidebar-close {
+      background: none; border: none; color: var(--muted);
+      font-size: 1.2rem; line-height: 1; cursor: pointer; padding: 4px;
+    }
+    .sidebar-backdrop {
+      position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5);
+      z-index: 105; opacity: 0; pointer-events: none; transition: opacity 0.22s;
+    }
+    .sidebar-backdrop.open { opacity: 1; pointer-events: auto; }
+    /* ---- tree nav (explorer style) ---- */
+    .tree { display: flex; flex-direction: column; gap: 1px; margin-top: 4px; }
+    .tnode {
+      display: flex; align-items: center; gap: 6px;
+      padding: 6px 8px; border-radius: 6px;
+      color: var(--text); text-decoration: none; font-size: 0.9rem;
+      cursor: pointer; white-space: nowrap; user-select: none;
+    }
+    .tnode:hover { background: var(--field); }
+    .tnode.active { background: var(--field); color: var(--accent); font-weight: 600; }
+    .tnode.soon { opacity: 0.5; pointer-events: none; }
+    .tw { width: 1em; font-size: 0.62rem; color: var(--muted); display: inline-block; text-align: center; transition: transform 0.15s; }
+    .tw-sp { width: 1em; display: inline-block; }
+    .tchildren { padding-left: 14px; }
+    .tchildren.collapsed { display: none; }
+    .tfolder.collapsed .tw { transform: rotate(-90deg); }
+    /* ---- toolbar / form (shared look with Canadian PR page) ---- */
+    .crs-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0 8px; }
+    .mini-btn {
+      background: var(--accent); color: #04283a; border: none;
+      border-radius: 8px; padding: 7px 12px; font-weight: 700;
+      font-size: 0.8rem; cursor: pointer; white-space: nowrap;
+    }
+    .mini-btn:active { background: var(--accent-press); transform: scale(0.97); }
+    .mini-btn:disabled { opacity: 0.5; cursor: default; }
+    .mini-btn.ghost { background: var(--field); color: var(--text); border: 1px solid var(--border); }
+    .mini-btn.danger { background: var(--err); color: #3a0a0a; }
+    .crs-date {
+      background: var(--field); border: 1px solid var(--border);
+      color: var(--text); border-radius: 8px; padding: 7px 8px;
+      font-size: 0.82rem; color-scheme: dark; cursor: pointer;
+    }
+    .crs-date:focus { outline: none; border-color: var(--accent); }
+    .crs-msg { font-size: 0.83rem; margin: 6px 0; min-height: 1.1em; }
+    .crs-msg.ok { color: var(--ok); }
+    .crs-msg.err { color: var(--err); }
+    .table-wrap { overflow-x: auto; margin-top: 8px; }
+    .crs-table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+    .crs-table th, .crs-table td {
+      text-align: left; padding: 8px 10px;
+      border-bottom: 1px solid var(--border); border-right: 1px solid var(--border);
+    }
+    .crs-table th:last-child, .crs-table td:last-child { border-right: none; }
+    .crs-table th { color: var(--muted); font-weight: 600; }
+    .crs-table td:first-child, .crs-table th:first-child {
+      position: sticky; left: 0; z-index: 1; background: var(--card); text-align: left;
+      min-width: 100px; box-shadow: 1px 0 0 var(--border);
+    }
+    .crs-table td:not(:first-child), .crs-table th:not(:first-child) {
+      text-align: center; white-space: nowrap;
+    }
+    .crs-form { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+    .crs-form input, .crs-form textarea {
+      background: var(--field); border: 1px solid var(--border);
+      color: var(--text); border-radius: 8px; padding: 9px 10px;
+      font-size: 0.88rem; color-scheme: dark; width: 100%; font-family: inherit;
+    }
+    .crs-form textarea { resize: vertical; }
+    .crs-form input:focus, .crs-form textarea:focus { outline: none; border-color: var(--accent); }
+    .btn-row { display: flex; gap: 8px; margin-top: 4px; }
+    /* ---- supplement list (manage) ---- */
+    .supp-table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+    .supp-table th, .supp-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: left; }
+    .supp-table th { color: var(--muted); font-weight: 600; }
+    .supp-table tr.archived td { color: var(--muted); font-style: italic; }
+    .supp-table td.actions { text-align: right; white-space: nowrap; }
+    .supp-table td.actions .mini-btn { padding: 4px 8px; font-size: 0.75rem; }
+    /* ---- today's checklist ---- */
+    .checklist { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+    .check-row {
+      display: flex; align-items: center; gap: 12px;
+      background: var(--field); border: 1px solid var(--border);
+      border-radius: 10px; padding: 10px 12px; cursor: pointer;
+    }
+    .check-row input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--accent); cursor: pointer; }
+    .check-row .cr-name { font-weight: 600; }
+    .check-row .cr-dose { color: var(--muted); font-size: 0.82rem; margin-left: 6px; }
+    .check-row.taken { border-color: var(--ok); }
+    .empty-note { color: var(--muted); font-size: 0.85rem; padding: 8px 0; }
+    /* ---- history table ---- */
+    .hist-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
+    .hist-table th, .hist-table td { padding: 7px 10px; border-bottom: 1px solid var(--border); text-align: center; white-space: nowrap; }
+    .hist-table th:first-child, .hist-table td:first-child { text-align: left; position: sticky; left: 0; background: var(--card); }
+    .hist-table th { color: var(--muted); font-weight: 600; }
+    .hist-table td.yes { color: var(--ok); font-weight: 700; }
+    .hist-table td.no { color: var(--err); font-weight: 700; }
+    .hist-table td.na { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <!-- ---- side drawer nav ---- -->
+  <div class="sidebar-backdrop" id="navBackdrop"></div>
+  <nav class="sidebar" id="sidebar" aria-label="Main menu">
+    <div class="sidebar-head">
+      <span class="sidebar-title">🧭 Daily Compass</span>
+      <button class="sidebar-close" id="navClose" aria-label="Close menu">✕</button>
+    </div>
+    <div class="tree">
+      <a class="tnode" href="index.html"><span class="tw-sp"></span>🏠 Home</a>
+      <div class="tfolder tnode collapsed" data-group="g-health"><span class="tw">▾</span>🩺 Health Log</div>
+      <div class="tchildren collapsed" id="g-health">
+        <a class="tnode" href="health-log.html"><span class="tw-sp"></span>Daily Routine</a>
+        <a class="tnode active" href="supplement-tracker.html"><span class="tw-sp"></span>Supplement Tracker</a>
+      </div>
+      <div class="tfolder tnode collapsed" data-group="g-temp"><span class="tw">▾</span>🗓️ Temporary</div>
+      <div class="tchildren collapsed" id="g-temp">
+        <div class="tfolder tnode collapsed" data-group="g-pr"><span class="tw">▾</span><svg width="14" height="9" viewBox="0 0 30 20" style="vertical-align:-1px;margin-right:4px;" aria-label="Canada"><rect width="30" height="20" fill="#fff" /><rect width="7.5" height="20" fill="#d52b1e" /><rect x="22.5" width="7.5" height="20" fill="#d52b1e" /><path fill="#d52b1e" d="M15 4l1 2.3 2.3-1-0.6 2.4 2.3 0.3-1.7 1.7 1.7 1.7-2.3 0.3 0.6 2.4-2.3-1-1 2.3-1-2.3-2.3 1 0.6-2.4-2.3-0.3 1.7-1.7-1.7-1.7 2.3-0.3-0.6-2.4 2.3 1z" /></svg>Canadian PR</div>
+        <div class="tchildren collapsed" id="g-pr">
+          <a class="tnode" href="temporary.html#pool"><span class="tw-sp"></span>📈 Pool breakdown</a>
+          <a class="tnode" href="temporary.html#growth"><span class="tw-sp"></span>🌱 Growth</a>
+          <a class="tnode" href="temporary.html#draws"><span class="tw-sp"></span>🎯 Draws</a>
+          <a class="tnode" href="temporary.html#analysis"><span class="tw-sp"></span>🔍 New candidates</a>
+          <a class="tnode" href="temporary.html#stats"><span class="tw-sp"></span>📐 Stats</a>
+          <a class="tnode" href="temporary.html#quota"><span class="tw-sp"></span>📊 Quota</a>
+        </div>
+      </div>
+      <a class="tnode soon"><span class="tw-sp"></span>📊 Stats</a>
+    </div>
+  </nav>
+
+  <div class="topbar">
+    <button class="hamburger" id="navToggle" aria-label="Open menu">☰</button>
+    <span class="topbar-title">🩺 Health Log - Supplement Tracker</span>
+    <button class="link-btn" id="logoutBtn">Log out</button>
+  </div>
+
+  <div class="wrap">
+    <div id="appView" class="hidden">
+
+      <!-- ---------- Manage supplements ---------- -->
+      <section class="field">
+        <div class="field-head"><span class="icon">💊</span><span class="label">Supplements</span></div>
+        <div class="muted-note">The fixed list you take. Archive one instead of deleting it — history stays intact.</div>
+
+        <div class="crs-toolbar">
+          <button class="mini-btn ghost" id="suppAddToggle">＋ Add supplement</button>
+        </div>
+        <div id="suppMsg" class="crs-msg"></div>
+
+        <div id="suppForm" class="crs-form hidden">
+          <input type="hidden" id="sfOrigName" />
+          <label class="muted-note" for="sfName">Name</label>
+          <input type="text" id="sfName" placeholder="e.g. Vitamin D3" />
+          <label class="muted-note" for="sfDose">Dose</label>
+          <input type="text" id="sfDose" placeholder="e.g. 2000 IU" />
+          <label class="muted-note" for="sfNotes">Notes</label>
+          <textarea id="sfNotes" rows="2" placeholder="Optional"></textarea>
+          <div class="btn-row">
+            <button class="mini-btn" id="sfSave">Save</button>
+            <button class="mini-btn ghost" id="sfCancel">Cancel</button>
+          </div>
+        </div>
+
+        <div class="table-wrap">
+          <table class="supp-table" id="suppTable"></table>
+        </div>
+      </section>
+
+      <!-- ---------- Today's checklist ---------- -->
+      <section class="field">
+        <div class="field-head"><span class="icon">✅</span><span class="label">Checklist</span></div>
+        <div class="crs-toolbar">
+          <label class="muted-note" for="checkDate">Date</label>
+          <input type="date" id="checkDate" class="crs-date" />
+        </div>
+        <div id="checkMsg" class="crs-msg"></div>
+        <div class="checklist" id="checklist"></div>
+      </section>
+
+      <!-- ---------- History ---------- -->
+      <section class="field">
+        <div class="field-head"><span class="icon">📋</span><span class="label">History</span></div>
+        <div class="muted-note">Last 30 days. ✓ taken · ✗ logged not taken · — not logged.</div>
+        <div class="table-wrap">
+          <table class="hist-table" id="histTable"></table>
+        </div>
+      </section>
+
+    </div>
+  </div>
+
+  <script type="module">
+    import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+    // ---- config (anon/publishable key; RLS protects data) ----
+    const SUPABASE_URL = 'https://twpzcszcvylhaopcwqkv.supabase.co';
+    const SUPABASE_KEY = 'sb_publishable_c1BhUlrZPf2YsXW_5LdrZw_-wYh4lJM';
+    const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    // single data-access surface (HLD §9)
+    const DB = {
+      onAuthChange(cb) { supabase.auth.onAuthStateChange((_e, s) => cb(s)); },
+      async currentSession() { const { data } = await supabase.auth.getSession(); return data.session; },
+      async signOut() { await supabase.auth.signOut(); },
+
+      async supplementsAll() {
+        const { data, error } = await supabase.from('supplements')
+          .select('name, dose, notes, active, sort_order').order('sort_order', { ascending: true }).order('name', { ascending: true });
+        if (error) throw error;
+        return data;
+      },
+      async supplementUpsert({ name, dose, notes, active, sort_order }) {
+        const { error } = await supabase.from('supplements').upsert({
+          name, dose: dose || null, notes: notes || null,
+          active: active !== false, sort_order: sort_order ?? 0,
+        }, { onConflict: 'name' });
+        if (error) throw error;
+      },
+      async supplementSetActive(name, active) {
+        const { error } = await supabase.from('supplements').update({ active }).eq('name', name);
+        if (error) throw error;
+      },
+      async logForDate(log_date) {
+        const { data, error } = await supabase.from('supplement_log')
+          .select('log_date, supplement, taken, taken_at').eq('log_date', log_date);
+        if (error) throw error;
+        return data;
+      },
+      async logSet(log_date, supplement, taken) {
+        const { error } = await supabase.from('supplement_log').upsert({
+          log_date, supplement, taken, taken_at: new Date().toISOString(),
+        }, { onConflict: 'log_date,supplement' });
+        if (error) throw error;
+      },
+      async logSince(fromDate) {
+        const { data, error } = await supabase.from('supplement_log')
+          .select('log_date, supplement, taken').gte('log_date', fromDate).order('log_date', { ascending: false });
+        if (error) throw error;
+        return data;
+      },
+    };
+
+    const $ = id => document.getElementById(id);
+
+    // ---- side drawer nav ----
+    const openNav  = () => { $('sidebar').classList.add('open'); $('navBackdrop').classList.add('open'); };
+    const closeNav = () => { $('sidebar').classList.remove('open'); $('navBackdrop').classList.remove('open'); };
+    $('navToggle').addEventListener('click', openNav);
+    $('navClose').addEventListener('click', closeNav);
+    $('navBackdrop').addEventListener('click', closeNav);
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeNav(); });
+    $('sidebar').addEventListener('click', e => {
+      const f = e.target.closest('.tfolder');
+      if (f) {
+        const g = document.getElementById(f.dataset.group);
+        if (g) g.classList.toggle('collapsed');
+        f.classList.toggle('collapsed');
+        return;
+      }
+      if (e.target.closest('a.tnode')) closeNav();
+    });
+
+    $('logoutBtn').addEventListener('click', async () => { await DB.signOut(); });
+
+    function todayDate() {
+      const d = new Date();
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    const suppMsg = (text, kind) => {
+      const el = $('suppMsg'); el.textContent = text || '';
+      el.className = 'crs-msg' + (kind ? ' ' + kind : '');
+    };
+    const checkMsg = (text, kind) => {
+      const el = $('checkMsg'); el.textContent = text || '';
+      el.className = 'crs-msg' + (kind ? ' ' + kind : '');
+    };
+
+    let supplements = [];   // full list (active + archived)
+
+    // ================================================================
+    // Manage supplements
+    // ================================================================
+    function openSuppForm(s) {
+      $('sfOrigName').value = s ? s.name : '';
+      $('sfName').value = s ? s.name : '';
+      $('sfDose').value = s ? (s.dose || '') : '';
+      $('sfNotes').value = s ? (s.notes || '') : '';
+      $('suppForm').classList.remove('hidden');
+      suppMsg('', '');
+      $('sfName').focus();
+    }
+    $('suppAddToggle').addEventListener('click', () => {
+      if ($('suppForm').classList.contains('hidden')) openSuppForm(null);
+      else $('suppForm').classList.add('hidden');
+    });
+    $('sfCancel').addEventListener('click', () => $('suppForm').classList.add('hidden'));
+    $('sfSave').addEventListener('click', async () => {
+      const name = $('sfName').value.trim();
+      if (!name) { suppMsg('Name is required.', 'err'); return; }
+      const origName = $('sfOrigName').value;
+      $('sfSave').disabled = true;
+      suppMsg('Saving…', '');
+      try {
+        if (origName && origName !== name) {
+          await DB.supplementSetActive(origName, false);   // don't silently orphan the old row
+        }
+        const existing = supplements.find(s => s.name === name);
+        await DB.supplementUpsert({
+          name, dose: $('sfDose').value.trim(), notes: $('sfNotes').value.trim(),
+          active: true, sort_order: existing ? existing.sort_order : supplements.length,
+        });
+        suppMsg('Saved.', 'ok');
+        $('suppForm').classList.add('hidden');
+        await loadSupplements();
+        await loadChecklist();
+      } catch (e) {
+        suppMsg('Save failed: ' + (e.message || ''), 'err');
+      } finally { $('sfSave').disabled = false; }
+    });
+
+    function renderSuppTable() {
+      const t = $('suppTable');
+      let html = '<thead><tr><th>Name</th><th>Dose</th><th>Notes</th><th>Status</th><th></th></tr></thead><tbody>';
+      for (const s of supplements) {
+        html += `<tr class="${s.active ? '' : 'archived'}">
+          <td>${s.name}</td><td>${s.dose || '—'}</td><td>${s.notes || '—'}</td>
+          <td>${s.active ? 'Active' : 'Archived'}</td>
+          <td class="actions">
+            <button class="mini-btn ghost" data-edit="${s.name}">Edit</button>
+            <button class="mini-btn ${s.active ? 'danger' : ''}" data-toggle="${s.name}">${s.active ? 'Archive' : 'Restore'}</button>
+          </td>
+        </tr>`;
+      }
+      html += '</tbody>';
+      t.innerHTML = html;
+      t.querySelectorAll('[data-edit]').forEach(btn => btn.addEventListener('click', () => {
+        openSuppForm(supplements.find(s => s.name === btn.dataset.edit));
+      }));
+      t.querySelectorAll('[data-toggle]').forEach(btn => btn.addEventListener('click', async () => {
+        const s = supplements.find(x => x.name === btn.dataset.toggle);
+        try {
+          await DB.supplementSetActive(s.name, !s.active);
+          await loadSupplements();
+          await loadChecklist();
+        } catch (e) { suppMsg('Update failed: ' + (e.message || ''), 'err'); }
+      }));
+    }
+
+    async function loadSupplements() {
+      supplements = await DB.supplementsAll();
+      renderSuppTable();
+      renderHistTable();
+    }
+
+    // ================================================================
+    // Today's checklist
+    // ================================================================
+    let checklistCache = {};   // supplement -> taken (for the selected date)
+
+    async function loadChecklist() {
+      const logDate = $('checkDate').value || todayDate();
+      const active = supplements.filter(s => s.active);
+      if (!active.length) {
+        $('checklist').innerHTML = '<div class="empty-note">No active supplements yet — add one above.</div>';
+        return;
+      }
+      const rows = await DB.logForDate(logDate);
+      checklistCache = Object.fromEntries(rows.map(r => [r.supplement, r.taken]));
+      $('checklist').innerHTML = active.map(s => {
+        const taken = checklistCache[s.name] === true;
+        return `<label class="check-row${taken ? ' taken' : ''}" data-name="${s.name}">
+          <input type="checkbox" ${taken ? 'checked' : ''} />
+          <span class="cr-name">${s.name}</span><span class="cr-dose">${s.dose || ''}</span>
+        </label>`;
+      }).join('');
+      $('checklist').querySelectorAll('.check-row').forEach(row => {
+        const cb = row.querySelector('input');
+        cb.addEventListener('change', async () => {
+          const logDate2 = $('checkDate').value || todayDate();
+          cb.disabled = true;
+          try {
+            await DB.logSet(logDate2, row.dataset.name, cb.checked);
+            row.classList.toggle('taken', cb.checked);
+            checkMsg('Saved.', 'ok');
+            renderHistTable();
+          } catch (e) {
+            cb.checked = !cb.checked;
+            checkMsg('Save failed: ' + (e.message || ''), 'err');
+          } finally { cb.disabled = false; }
+        });
+      });
+    }
+    $('checkDate').addEventListener('change', () => loadChecklist());
+
+    // ================================================================
+    // History (last 30 days)
+    // ================================================================
+    let histLog = [];
+    async function loadHistory() {
+      const from = new Date();
+      from.setDate(from.getDate() - 29);
+      const fromStr = `${from.getFullYear()}-${String(from.getMonth() + 1).padStart(2, '0')}-${String(from.getDate()).padStart(2, '0')}`;
+      histLog = await DB.logSince(fromStr);
+      renderHistTable();
+    }
+    function renderHistTable() {
+      const t = $('histTable');
+      const cols = supplements.length
+        ? supplements.map(s => s.name)
+        : [...new Set(histLog.map(r => r.supplement))];
+      if (!cols.length) { t.innerHTML = ''; return; }
+      const byDate = {};
+      for (const r of histLog) {
+        (byDate[r.log_date] ||= {})[r.supplement] = r.taken;
+      }
+      const dates = Object.keys(byDate).sort((a, b) => b.localeCompare(a));
+      let html = '<thead><tr><th>Date</th>' + cols.map(c => `<th>${c}</th>`).join('') + '</tr></thead><tbody>';
+      if (!dates.length) {
+        html += `<tr><td colspan="${cols.length + 1}" class="na">No entries yet.</td></tr>`;
+      }
+      for (const d of dates) {
+        html += `<tr><td>${d}</td>` + cols.map(c => {
+          const v = byDate[d][c];
+          if (v === true) return '<td class="yes">✓</td>';
+          if (v === false) return '<td class="no">✗</td>';
+          return '<td class="na">—</td>';
+        }).join('') + '</tr>';
+      }
+      html += '</tbody>';
+      t.innerHTML = html;
+    }
+
+    // ---- route: no session → sign in on the picker page ----
+    function showLogin() { window.location.replace('index.html'); }
+    async function showApp() {
+      $('appView').classList.remove('hidden');
+      $('checkDate').value = todayDate();
+      try {
+        await loadSupplements();
+        await loadChecklist();
+        await loadHistory();
+      } catch (e) {
+        suppMsg('Could not load: ' + (e.message || ''), 'err');
+      }
+    }
+
+    DB.onAuthChange(session => { if (session) showApp(); else showLogin(); });
+    DB.currentSession().then(s => { if (s) showApp(); else showLogin(); });
+  </script>
+</body>
+</html>
