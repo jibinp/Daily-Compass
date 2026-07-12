@@ -143,6 +143,14 @@
     .supp-table tr.archived td { color: var(--muted); font-style: italic; }
     .supp-table td.actions { text-align: right; white-space: nowrap; }
     .supp-table td.actions .mini-btn { padding: 4px 8px; font-size: 0.75rem; }
+    .supp-table td.ing { white-space: normal; color: var(--muted); font-size: 0.82rem; max-width: 260px; }
+    .ing-row { display: flex; gap: 6px; margin-bottom: 6px; }
+    .ing-row input { flex: 1; min-width: 0; }
+    .ing-row input.ing-amount { flex: 0 0 90px; }
+    .ing-row .ing-rm {
+      background: var(--field); border: 1px solid var(--border); color: var(--err);
+      border-radius: 8px; padding: 0 10px; cursor: pointer; font-size: 1rem; flex: 0 0 auto;
+    }
     /* ---- history table ---- */
     .hist-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
     .hist-table th, .hist-table td { padding: 7px 10px; border-bottom: 1px solid var(--border); text-align: center; white-space: nowrap; }
@@ -195,19 +203,22 @@
 
       <!-- ---------- Manage supplements ---------- -->
       <section class="field">
-        <div class="field-head"><span class="icon">💊</span><span class="label">Supplements</span></div>
-        <div class="muted-note">Adding new supplements and daily taken/not-taken entry both happen on <a href="health-log.html" style="color:var(--accent);">Health Log - Data Entry</a>. Edit or archive existing ones here — history stays intact.</div>
+        <div class="field-head"><span class="icon">💊</span><span class="label">Tablets</span></div>
+        <div class="muted-note">Adding a new tablet and daily taken/not-taken entry both happen on <a href="health-log.html" style="color:var(--accent);">Health Log - Data Entry</a>. Edit or archive existing ones here — history stays intact.</div>
 
         <div id="suppMsg" class="crs-msg"></div>
 
         <div id="suppForm" class="crs-form hidden">
           <input type="hidden" id="sfOrigName" />
-          <label class="muted-note" for="sfName">Name</label>
-          <input type="text" id="sfName" placeholder="e.g. Vitamin D3" />
-          <label class="muted-note" for="sfDose">Dose</label>
-          <input type="text" id="sfDose" placeholder="e.g. 2000 IU" />
+          <label class="muted-note" for="sfName">Tablet name</label>
+          <input type="text" id="sfName" placeholder="e.g. Daily Multivitamin" />
+          <label class="muted-note" for="sfDose">Serving</label>
+          <input type="text" id="sfDose" placeholder="e.g. 1 tablet" />
           <label class="muted-note" for="sfNotes">Notes</label>
           <textarea id="sfNotes" rows="2" placeholder="Optional"></textarea>
+          <label class="muted-note">Ingredients</label>
+          <div id="sfIngredients"></div>
+          <button class="mini-btn ghost" id="sfIngAdd" type="button">＋ Add ingredient</button>
           <div class="btn-row">
             <button class="mini-btn" id="sfSave">Save</button>
             <button class="mini-btn ghost" id="sfCancel">Cancel</button>
@@ -262,6 +273,24 @@
         const { error } = await supabase.from('supplements').update({ active }).eq('name', name);
         if (error) throw error;
       },
+      async ingredientsAll() {
+        const { data, error } = await supabase.from('supplement_ingredients')
+          .select('supplement, ingredient, amount').order('sort_order', { ascending: true });
+        if (error) throw error;
+        return data;
+      },
+      // replace the full ingredient list for a tablet (delete + re-insert is
+      // simplest to keep in sync with a freeform, reorderable row list)
+      async ingredientsReplace(supplement, ingredients) {
+        const del = await supabase.from('supplement_ingredients').delete().eq('supplement', supplement);
+        if (del.error) throw del.error;
+        if (!ingredients.length) return;
+        const rows = ingredients.map((ing, i) => ({
+          supplement, ingredient: ing.ingredient, amount: ing.amount || null, sort_order: i,
+        }));
+        const ins = await supabase.from('supplement_ingredients').insert(rows);
+        if (ins.error) throw ins.error;
+      },
       async logSince(fromDate) {
         const { data, error } = await supabase.from('supplement_log')
           .select('log_date, supplement, taken').gte('log_date', fromDate).order('log_date', { ascending: false });
@@ -298,15 +327,40 @@
     };
 
     let supplements = [];   // full list (active + archived)
+    let ingredientsBySupp = {};   // name -> [{ ingredient, amount }]
 
     // ================================================================
     // Manage supplements
     // ================================================================
+    function addIngredientRow(ingredient = '', amount = '') {
+      const row = document.createElement('div');
+      row.className = 'ing-row';
+      row.innerHTML = `
+        <input type="text" class="ing-name" placeholder="Ingredient, e.g. Vitamin D3" value="${ingredient}" />
+        <input type="text" class="ing-amount" placeholder="Amount" value="${amount}" />
+        <button type="button" class="ing-rm" title="Remove">✕</button>`;
+      row.querySelector('.ing-rm').addEventListener('click', () => row.remove());
+      $('sfIngredients').appendChild(row);
+    }
+    function collectIngredients() {
+      return [...$('sfIngredients').querySelectorAll('.ing-row')]
+        .map(row => ({
+          ingredient: row.querySelector('.ing-name').value.trim(),
+          amount: row.querySelector('.ing-amount').value.trim(),
+        }))
+        .filter(i => i.ingredient);
+    }
+    $('sfIngAdd').addEventListener('click', () => addIngredientRow());
+
     function openSuppForm(s) {
       $('sfOrigName').value = s.name;
       $('sfName').value = s.name;
       $('sfDose').value = s.dose || '';
       $('sfNotes').value = s.notes || '';
+      $('sfIngredients').innerHTML = '';
+      const ings = ingredientsBySupp[s.name] || [];
+      if (ings.length) ings.forEach(i => addIngredientRow(i.ingredient, i.amount || ''));
+      else addIngredientRow();
       $('suppForm').classList.remove('hidden');
       suppMsg('', '');
       $('sfName').focus();
@@ -327,6 +381,7 @@
           name, dose: $('sfDose').value.trim(), notes: $('sfNotes').value.trim(),
           active: true, sort_order: existing ? existing.sort_order : supplements.length,
         });
+        await DB.ingredientsReplace(name, collectIngredients());
         suppMsg('Saved.', 'ok');
         $('suppForm').classList.add('hidden');
         await loadSupplements();
@@ -337,13 +392,17 @@
 
     function renderSuppTable() {
       const t = $('suppTable');
-      let html = '<thead><tr><th>Name</th><th>Dose</th><th>Notes</th><th>Status</th><th></th></tr></thead><tbody>';
+      let html = '<thead><tr><th>Tablet</th><th>Serving</th><th>Ingredients</th><th>Notes</th><th>Status</th><th></th></tr></thead><tbody>';
       if (!supplements.length) {
-        html += '<tr><td colspan="5" class="muted-note">No supplements yet — add one on Health Log - Data Entry.</td></tr>';
+        html += '<tr><td colspan="6" class="muted-note">No tablets yet — add one on Health Log - Data Entry.</td></tr>';
       }
       for (const s of supplements) {
+        const ings = ingredientsBySupp[s.name] || [];
+        const ingText = ings.length
+          ? ings.map(i => i.amount ? `${i.ingredient} (${i.amount})` : i.ingredient).join(', ')
+          : '—';
         html += `<tr class="${s.active ? '' : 'archived'}">
-          <td>${s.name}</td><td>${s.dose || '—'}</td><td>${s.notes || '—'}</td>
+          <td>${s.name}</td><td>${s.dose || '—'}</td><td class="ing">${ingText}</td><td>${s.notes || '—'}</td>
           <td>${s.active ? 'Active' : 'Archived'}</td>
           <td class="actions">
             <button class="mini-btn ghost" data-edit="${s.name}">Edit</button>
@@ -366,7 +425,10 @@
     }
 
     async function loadSupplements() {
-      supplements = await DB.supplementsAll();
+      const [supps, ings] = await Promise.all([DB.supplementsAll(), DB.ingredientsAll()]);
+      supplements = supps;
+      ingredientsBySupp = {};
+      for (const i of ings) (ingredientsBySupp[i.supplement] ||= []).push(i);
       renderSuppTable();
       renderHistTable();
     }
