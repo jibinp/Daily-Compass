@@ -109,12 +109,6 @@
     .mini-btn:disabled { opacity: 0.5; cursor: default; }
     .mini-btn.ghost { background: var(--field); color: var(--text); border: 1px solid var(--border); }
     .mini-btn.danger { background: var(--err); color: #3a0a0a; }
-    .crs-date {
-      background: var(--field); border: 1px solid var(--border);
-      color: var(--text); border-radius: 8px; padding: 7px 8px;
-      font-size: 0.82rem; color-scheme: dark; cursor: pointer;
-    }
-    .crs-date:focus { outline: none; border-color: var(--accent); }
     .crs-msg { font-size: 0.83rem; margin: 6px 0; min-height: 1.1em; }
     .crs-msg.ok { color: var(--ok); }
     .crs-msg.err { color: var(--err); }
@@ -149,18 +143,6 @@
     .supp-table tr.archived td { color: var(--muted); font-style: italic; }
     .supp-table td.actions { text-align: right; white-space: nowrap; }
     .supp-table td.actions .mini-btn { padding: 4px 8px; font-size: 0.75rem; }
-    /* ---- today's checklist ---- */
-    .checklist { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
-    .check-row {
-      display: flex; align-items: center; gap: 12px;
-      background: var(--field); border: 1px solid var(--border);
-      border-radius: 10px; padding: 10px 12px; cursor: pointer;
-    }
-    .check-row input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--accent); cursor: pointer; }
-    .check-row .cr-name { font-weight: 600; }
-    .check-row .cr-dose { color: var(--muted); font-size: 0.82rem; margin-left: 6px; }
-    .check-row.taken { border-color: var(--ok); }
-    .empty-note { color: var(--muted); font-size: 0.85rem; padding: 8px 0; }
     /* ---- history table ---- */
     .hist-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
     .hist-table th, .hist-table td { padding: 7px 10px; border-bottom: 1px solid var(--border); text-align: center; white-space: nowrap; }
@@ -214,7 +196,7 @@
       <!-- ---------- Manage supplements ---------- -->
       <section class="field">
         <div class="field-head"><span class="icon">💊</span><span class="label">Supplements</span></div>
-        <div class="muted-note">The fixed list you take. Archive one instead of deleting it — history stays intact.</div>
+        <div class="muted-note">The fixed list you take. Archive one instead of deleting it — history stays intact. Daily taken/not-taken entry happens on <a href="health-log.html" style="color:var(--accent);">Health Log - Daily Routine</a>.</div>
 
         <div class="crs-toolbar">
           <button class="mini-btn ghost" id="suppAddToggle">＋ Add supplement</button>
@@ -238,17 +220,6 @@
         <div class="table-wrap">
           <table class="supp-table" id="suppTable"></table>
         </div>
-      </section>
-
-      <!-- ---------- Today's checklist ---------- -->
-      <section class="field">
-        <div class="field-head"><span class="icon">✅</span><span class="label">Checklist</span></div>
-        <div class="crs-toolbar">
-          <label class="muted-note" for="checkDate">Date</label>
-          <input type="date" id="checkDate" class="crs-date" />
-        </div>
-        <div id="checkMsg" class="crs-msg"></div>
-        <div class="checklist" id="checklist"></div>
       </section>
 
       <!-- ---------- History ---------- -->
@@ -294,18 +265,6 @@
         const { error } = await supabase.from('supplements').update({ active }).eq('name', name);
         if (error) throw error;
       },
-      async logForDate(log_date) {
-        const { data, error } = await supabase.from('supplement_log')
-          .select('log_date, supplement, taken, taken_at').eq('log_date', log_date);
-        if (error) throw error;
-        return data;
-      },
-      async logSet(log_date, supplement, taken) {
-        const { error } = await supabase.from('supplement_log').upsert({
-          log_date, supplement, taken, taken_at: new Date().toISOString(),
-        }, { onConflict: 'log_date,supplement' });
-        if (error) throw error;
-      },
       async logSince(fromDate) {
         const { data, error } = await supabase.from('supplement_log')
           .select('log_date, supplement, taken').gte('log_date', fromDate).order('log_date', { ascending: false });
@@ -336,17 +295,8 @@
 
     $('logoutBtn').addEventListener('click', async () => { await DB.signOut(); });
 
-    function todayDate() {
-      const d = new Date();
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    }
-
     const suppMsg = (text, kind) => {
       const el = $('suppMsg'); el.textContent = text || '';
-      el.className = 'crs-msg' + (kind ? ' ' + kind : '');
-    };
-    const checkMsg = (text, kind) => {
-      const el = $('checkMsg'); el.textContent = text || '';
       el.className = 'crs-msg' + (kind ? ' ' + kind : '');
     };
 
@@ -387,7 +337,6 @@
         suppMsg('Saved.', 'ok');
         $('suppForm').classList.add('hidden');
         await loadSupplements();
-        await loadChecklist();
       } catch (e) {
         suppMsg('Save failed: ' + (e.message || ''), 'err');
       } finally { $('sfSave').disabled = false; }
@@ -416,7 +365,6 @@
         try {
           await DB.supplementSetActive(s.name, !s.active);
           await loadSupplements();
-          await loadChecklist();
         } catch (e) { suppMsg('Update failed: ' + (e.message || ''), 'err'); }
       }));
     }
@@ -426,46 +374,6 @@
       renderSuppTable();
       renderHistTable();
     }
-
-    // ================================================================
-    // Today's checklist
-    // ================================================================
-    let checklistCache = {};   // supplement -> taken (for the selected date)
-
-    async function loadChecklist() {
-      const logDate = $('checkDate').value || todayDate();
-      const active = supplements.filter(s => s.active);
-      if (!active.length) {
-        $('checklist').innerHTML = '<div class="empty-note">No active supplements yet — add one above.</div>';
-        return;
-      }
-      const rows = await DB.logForDate(logDate);
-      checklistCache = Object.fromEntries(rows.map(r => [r.supplement, r.taken]));
-      $('checklist').innerHTML = active.map(s => {
-        const taken = checklistCache[s.name] === true;
-        return `<label class="check-row${taken ? ' taken' : ''}" data-name="${s.name}">
-          <input type="checkbox" ${taken ? 'checked' : ''} />
-          <span class="cr-name">${s.name}</span><span class="cr-dose">${s.dose || ''}</span>
-        </label>`;
-      }).join('');
-      $('checklist').querySelectorAll('.check-row').forEach(row => {
-        const cb = row.querySelector('input');
-        cb.addEventListener('change', async () => {
-          const logDate2 = $('checkDate').value || todayDate();
-          cb.disabled = true;
-          try {
-            await DB.logSet(logDate2, row.dataset.name, cb.checked);
-            row.classList.toggle('taken', cb.checked);
-            checkMsg('Saved.', 'ok');
-            renderHistTable();
-          } catch (e) {
-            cb.checked = !cb.checked;
-            checkMsg('Save failed: ' + (e.message || ''), 'err');
-          } finally { cb.disabled = false; }
-        });
-      });
-    }
-    $('checkDate').addEventListener('change', () => loadChecklist());
 
     // ================================================================
     // History (last 30 days)
@@ -509,10 +417,8 @@
     function showLogin() { window.location.replace('index.html'); }
     async function showApp() {
       $('appView').classList.remove('hidden');
-      $('checkDate').value = todayDate();
       try {
         await loadSupplements();
-        await loadChecklist();
         await loadHistory();
       } catch (e) {
         suppMsg('Could not load: ' + (e.message || ''), 'err');

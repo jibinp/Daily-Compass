@@ -274,6 +274,18 @@
     .stat-lbl { font-size: 0.7rem; color: var(--muted); margin-top: 4px; }
     .data-head { display: flex; align-items: center; justify-content: space-between; }
     .data-head h2 { margin: 8px 0; }
+    /* ---- supplement checklist (data entry) ---- */
+    .checklist { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+    .check-row {
+      display: flex; align-items: center; gap: 12px;
+      background: var(--field); border: 1px solid var(--border);
+      border-radius: 10px; padding: 10px 12px; cursor: pointer;
+    }
+    .check-row input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--accent); cursor: pointer; }
+    .check-row .cr-name { font-weight: 600; }
+    .check-row .cr-dose { color: var(--muted); font-size: 0.82rem; margin-left: 6px; }
+    .check-row.taken { border-color: var(--ok); }
+    .empty-note { color: var(--muted); font-size: 0.85rem; padding: 8px 0; }
   </style>
 </head>
 <body>
@@ -377,6 +389,11 @@
           <div class="note">
             Tap <strong>Now</strong> to fill a field with the current time, or pick
             date &amp; time manually. Filled fields save on <strong>Save</strong>.
+          </div>
+
+          <div class="field">
+            <div class="field-head"><span class="icon">💊</span><span class="label">Supplement Tracker</span></div>
+            <div class="checklist" id="suppChecklist"></div>
           </div>
         </section>
 
@@ -545,6 +562,25 @@
           .limit(1);
         if (error) throw error;
         return data.length ? data[0].id : null;
+      },
+      // ---- Supplement Tracker (entry lives here; management/history on its own page) ----
+      async activeSupplements() {
+        const { data, error } = await supabase.from('supplements')
+          .select('name, dose').eq('active', true).order('sort_order', { ascending: true }).order('name', { ascending: true });
+        if (error) throw error;
+        return data;
+      },
+      async supplementLogForDate(log_date) {
+        const { data, error } = await supabase.from('supplement_log')
+          .select('supplement, taken').eq('log_date', log_date);
+        if (error) throw error;
+        return data;
+      },
+      async supplementLogSet(log_date, supplement, taken) {
+        const { error } = await supabase.from('supplement_log').upsert({
+          log_date, supplement, taken, taken_at: new Date().toISOString(),
+        }, { onConflict: 'log_date,supplement' });
+        if (error) throw error;
       },
     };
 
@@ -770,10 +806,49 @@
         msg($('saveMsg'), 'Could not load day: ' + e.message, 'err');
       }
     }
-    $('logDate').addEventListener('change', () => loadDay($('logDate').value));
+    // ---- Supplement Tracker checklist (tied to the same log date) ----
+    let activeSupplements = [];
+    async function loadSupplementChecklist(logDate) {
+      const el = $('suppChecklist');
+      if (!logDate) { el.innerHTML = ''; return; }
+      try {
+        if (!activeSupplements.length) activeSupplements = await DB.activeSupplements();
+        if (!activeSupplements.length) {
+          el.innerHTML = '<div class="empty-note">No active supplements — add one on the Supplement Tracker page.</div>';
+          return;
+        }
+        const rows = await DB.supplementLogForDate(logDate);
+        const takenMap = Object.fromEntries(rows.map(r => [r.supplement, r.taken]));
+        el.innerHTML = activeSupplements.map(s => {
+          const taken = takenMap[s.name] === true;
+          return `<label class="check-row${taken ? ' taken' : ''}" data-name="${s.name}">
+            <input type="checkbox" ${taken ? 'checked' : ''} />
+            <span class="cr-name">${s.name}</span><span class="cr-dose">${s.dose || ''}</span>
+          </label>`;
+        }).join('');
+        el.querySelectorAll('.check-row').forEach(row => {
+          const cb = row.querySelector('input');
+          cb.addEventListener('change', async () => {
+            cb.disabled = true;
+            try {
+              await DB.supplementLogSet(logDate, row.dataset.name, cb.checked);
+              row.classList.toggle('taken', cb.checked);
+            } catch (e) {
+              cb.checked = !cb.checked;
+              msg($('saveMsg'), 'Supplement save failed: ' + e.message, 'err');
+            } finally { cb.disabled = false; }
+          });
+        });
+      } catch (e) {
+        el.innerHTML = '<div class="empty-note">Could not load supplements: ' + e.message + '</div>';
+      }
+    }
+
+    $('logDate').addEventListener('change', () => { loadDay($('logDate').value); loadSupplementChecklist($('logDate').value); });
     $('todayBtn').addEventListener('click', () => {
       $('logDate').value = todayDate();
       loadDay(todayDate());
+      loadSupplementChecklist(todayDate());
     });
 
     $('logoutBtn').addEventListener('click', async () => {
@@ -973,6 +1048,7 @@
       $('appView').classList.remove('hidden');
       if (!$('logDate').value) $('logDate').value = todayDate();
       await loadDay($('logDate').value);
+      await loadSupplementChecklist($('logDate').value);
       await refreshFasting();
       await refreshSleepLast();
       await renderDataTable();
