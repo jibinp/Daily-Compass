@@ -345,6 +345,9 @@
     function renderSuppTable() {
       const t = $('suppTable');
       let html = '<thead><tr><th>Name</th><th>Dose</th><th>Notes</th><th>Status</th><th></th></tr></thead><tbody>';
+      if (!supplements.length) {
+        html += '<tr><td colspan="5" class="muted-note">No supplements yet — click "+ Add supplement" above to add your first one.</td></tr>';
+      }
       for (const s of supplements) {
         html += `<tr class="${s.active ? '' : 'archived'}">
           <td>${s.name}</td><td>${s.dose || '—'}</td><td>${s.notes || '—'}</td>
@@ -420,6 +423,7 @@
       try {
         await loadSupplements();
         await loadHistory();
+        if (!supplements.length) openSuppForm(null);   // nothing to show yet — open the add form directly
       } catch (e) {
         suppMsg('Could not load: ' + (e.message || ''), 'err');
       }
