@@ -72,6 +72,15 @@
       color-scheme: dark;
     }
     input:focus { outline: none; border-color: var(--accent); }
+    .reduction-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+    .reduction-row input {
+      width: 44px; background: var(--field); border: 1px solid var(--border);
+      color: var(--text); border-radius: 8px; padding: 6px 4px;
+      font-size: 0.82rem; text-align: center; color-scheme: dark;
+    }
+    .reduction-row input:focus { outline: none; border-color: var(--accent); }
+    .reduction-row span { font-size: 0.78rem; color: var(--muted); }
+    .reduction-row .rr-label { margin-right: 2px; }
     .now-btn, .btn {
       background: var(--accent);
       color: #04283a;
@@ -323,6 +332,13 @@
                 <button class="now-btn" data-target="wakeup">Now</button>
               </div>
               <select class="tz-select-sm" id="tz_wakeup" aria-label="Wakeup time zone"></select>
+              <div class="reduction-row" title="Subtracted from tonight's sleep duration (e.g. time spent awake before actually getting up)">
+                <span class="rr-label">Reduction</span>
+                <input type="text" inputmode="numeric" pattern="[0-9]*" id="wakeupRedH" placeholder="0" />
+                <span>hr</span>
+                <input type="text" inputmode="numeric" pattern="[0-9]*" id="wakeupRedM" placeholder="0" />
+                <span>min</span>
+              </div>
             </div>
             <div class="field">
               <div class="field-head"><span class="icon">🍽️</span><span class="label">Eat start</span></div>
@@ -448,10 +464,10 @@
       async signOut() {
         await supabase.auth.signOut();
       },
-      async addEvent({ aspect, title, datetime, log_date, notes, tz }) {
+      async addEvent({ aspect, title, datetime, log_date, notes, tz, reduction_min }) {
         const { error } = await supabase
           .from('events')
-          .insert({ aspect, title, datetime, log_date, tz: tz ?? null, notes: notes ?? null });
+          .insert({ aspect, title, datetime, log_date, tz: tz ?? null, notes: notes ?? null, reduction_min: reduction_min ?? null });
         if (error) throw error;
       },
       async recentEvents(limit = 15) {
@@ -466,7 +482,7 @@
       async allEvents() {
         const { data, error } = await supabase
           .from('events')
-          .select('id, aspect, title, datetime, log_date, tz')
+          .select('id, aspect, title, datetime, log_date, tz, reduction_min')
           .order('log_date', { ascending: false })
           .order('datetime', { ascending: true });
         if (error) throw error;
@@ -486,6 +502,17 @@
         if (error) throw error;
         return data.length ? data[0].datetime : null;
       },
+      // latest datetime + reduction_min for an aspect, else null (used for wakeup)
+      async lastEventWithReduction(aspect) {
+        const { data, error } = await supabase
+          .from('events')
+          .select('datetime, reduction_min')
+          .eq('aspect', aspect)
+          .order('datetime', { ascending: false })
+          .limit(1);
+        if (error) throw error;
+        return data.length ? data[0] : null;
+      },
       async deleteEvent(id) {
         const { error } = await supabase.from('events').delete().eq('id', id);
         if (error) throw error;
@@ -498,7 +525,7 @@
       async dayEvents(logDate) {
         const { data, error } = await supabase
           .from('events')
-          .select('aspect, datetime, tz')
+          .select('aspect, datetime, tz, reduction_min')
           .eq('log_date', logDate)
           .order('datetime', { ascending: true });
         if (error) throw error;
@@ -690,9 +717,9 @@
     async function refreshSleepLast() {
       const el = $('sleepLast');
       try {
-        const [wake, sleep] = await Promise.all([DB.lastEvent('wakeup'), DB.lastEvent('sleep')]);
+        const [wake, sleep] = await Promise.all([DB.lastEventWithReduction('wakeup'), DB.lastEvent('sleep')]);
         if (!wake || !sleep) { el.textContent = '—'; return; }
-        const mins = (new Date(wake) - new Date(sleep)) / 60000;
+        let mins = (new Date(wake.datetime) - new Date(sleep)) / 60000 - (wake.reduction_min || 0);
         if (mins <= 0) { el.textContent = '—'; return; }
         el.textContent = `${Math.floor(mins / 60)}h ${Math.round(mins % 60)}m`;
       } catch { el.textContent = '—'; }
@@ -710,6 +737,7 @@
     async function loadDay(logDate) {
       FIELDS.forEach(f => { $(f.id).value = ''; });   // clear first
       TZ_FIELDS.forEach(id => { if ($('tz_' + id)) $('tz_' + id).value = currentTz; });  // reset zones to default
+      $('wakeupRedH').value = ''; $('wakeupRedM').value = '';
       if (!logDate) return;
       try {
         const rows = await DB.dayEvents(logDate);
@@ -718,6 +746,10 @@
           const tz = r.tz || currentTz;
           if ($('tz_' + r.aspect)) $('tz_' + r.aspect).value = tz;
           $(r.aspect).value = isoToZonedLocal(r.datetime, tz);
+          if (r.aspect === 'wakeup' && r.reduction_min) {
+            $('wakeupRedH').value = Math.floor(r.reduction_min / 60) || '';
+            $('wakeupRedM').value = r.reduction_min % 60 || '';
+          }
         }
         msg($('saveMsg'), rows.length ? `Loaded ${logDate}.` : `Nothing logged for ${logDate} yet.`,
           rows.length ? 'ok' : '');
@@ -766,17 +798,20 @@
         }
 
         msg($('saveMsg'), 'Saving…', '');
+        const wakeupReduction = (parseInt($('wakeupRedH').value, 10) || 0) * 60 + (parseInt($('wakeupRedM').value, 10) || 0);
         for (const p of plan) {
           const tz = fieldTz(p.f.id);                          // zone this event happened in
           const iso = zonedToUtc(p.f.value, tz).toISOString();  // wall-clock in that zone → UTC
+          const reduction_min = p.f.id === 'wakeup' ? (wakeupReduction || null) : undefined;
           if (p.existingId) {
-            await DB.updateEvent(p.existingId, { datetime: iso, title: p.f.label, tz });
+            await DB.updateEvent(p.existingId, { datetime: iso, title: p.f.label, tz, ...(p.f.id === 'wakeup' ? { reduction_min } : {}) });
           } else {
-            await DB.addEvent({ aspect: p.f.id, title: p.f.label, datetime: iso, log_date: logDate, tz });
+            await DB.addEvent({ aspect: p.f.id, title: p.f.label, datetime: iso, log_date: logDate, tz, reduction_min });
           }
         }
         msg($('saveMsg'), `Saved ${plan.length} entr${plan.length === 1 ? 'y' : 'ies'}.`, 'ok');
         FIELDS.forEach(f => { $(f.id).value = ''; });
+        $('wakeupRedH').value = ''; $('wakeupRedM').value = '';
         await refreshFasting();
         await refreshSleepLast();
         await renderDataTable();
@@ -849,6 +884,7 @@
       $('statDays').textContent = keys.length || '—';
       // pick first datetime of an aspect on a day (ignore dup extras)
       const at = (d, aspect) => d[aspect] && d[aspect].length ? new Date(d[aspect][0].datetime) : null;
+      const reductionOf = (d, aspect) => d[aspect] && d[aspect].length ? (d[aspect][0].reduction_min || 0) : 0;
       const avg = (durs) => durs.length
         ? `${Math.floor(durs.reduce((a, b) => a + b, 0) / durs.length / 60)}h `
           + `${Math.round(durs.reduce((a, b) => a + b, 0) / durs.length % 60)}m`
@@ -859,10 +895,14 @@
         const d = days[sorted[i]];
         const es = at(d, 'eat_start'), ee = at(d, 'eat_end');
         if (es && ee && ee > es) eatDurs.push((ee - es) / 60000);
-        // sleep length = this day's Sleep → next day's Wakeup
+        // sleep length = this day's Sleep → next day's Wakeup, minus that wakeup's reduction
         const sl = at(d, 'sleep');
-        const nextWake = i + 1 < sorted.length ? at(days[sorted[i + 1]], 'wakeup') : null;
-        if (sl && nextWake && nextWake > sl) sleepDurs.push((nextWake - sl) / 60000);
+        const nextDay = i + 1 < sorted.length ? days[sorted[i + 1]] : null;
+        const nextWake = nextDay ? at(nextDay, 'wakeup') : null;
+        if (sl && nextWake && nextWake > sl) {
+          const dur = (nextWake - sl) / 60000 - reductionOf(nextDay, 'wakeup');
+          if (dur > 0) sleepDurs.push(dur);
+        }
       }
       $('statEat').textContent = avg(eatDurs);
       $('statSleep').textContent = avg(sleepDurs);
