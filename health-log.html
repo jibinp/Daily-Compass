@@ -134,6 +134,7 @@
       font-size: 0.8rem;
       line-height: 1.5;
     }
+    .muted-note { color: var(--muted); font-size: 0.85rem; line-height: 1.5; }
     .msg { text-align: center; font-size: 0.9rem; margin: 12px 0; min-height: 1.2em; }
     .msg.ok { color: var(--ok); }
     .msg.err { color: var(--err); }
@@ -247,17 +248,6 @@
       display: inline-block;
     }
     .btn-alt:active { background: var(--field); transform: scale(0.98); }
-    .table-wrap { overflow-x: auto; margin-top: 8px; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
-    th { color: var(--muted); font-weight: 600; }
-    .del-btn {
-      background: none; border: none; color: var(--err);
-      cursor: pointer; font-size: 1rem; padding: 0 4px; line-height: 1;
-    }
-    .del-btn:active { transform: scale(0.9); }
-    tr.dup td, td.dupcell { background: rgba(248, 113, 113, 0.14); }
-    .dup-note { color: var(--err); font-size: 0.85rem; margin: 6px 0; }
     .warn { color: var(--err); }
     /* two-column: entry left, live analysis right */
     .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
@@ -274,7 +264,6 @@
     .stat-val { font-size: 1.15rem; font-weight: 700; color: var(--accent); }
     .stat-lbl { font-size: 0.7rem; color: var(--muted); margin-top: 4px; }
     .data-head { display: flex; align-items: center; justify-content: space-between; }
-    .data-head h2 { margin: 8px 0; }
     /* ---- supplement checklist (data entry) ---- */
     .checklist { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
     .check-row {
@@ -330,6 +319,7 @@
       <div class="tchildren collapsed" id="g-health">
         <a class="tnode active" href="health-log.html"><span class="tw-sp"></span>Data Entry</a>
         <a class="tnode" href="supplement-tracker.html"><span class="tw-sp"></span>Tablet Ingredient Updater</a>
+        <a class="tnode" href="all-data.html"><span class="tw-sp"></span>All Data</a>
       </div>
       <div class="tfolder tnode collapsed" data-group="g-temp"><span class="tw">▾</span>🗓️ Temporary</div>
       <div class="tchildren collapsed" id="g-temp">
@@ -484,18 +474,13 @@
             <div class="stat"><div class="stat-val" id="statSleep">—</div><div class="stat-lbl">Avg sleep</div></div>
           </div>
 
-          <div class="data-head">
-            <h2>All data</h2>
-            <button class="link-btn" id="refreshBtn">↻ Refresh</button>
-          </div>
-          <div class="dup-note hidden" id="dupNote"></div>
-          <div class="table-wrap">
-            <table id="dataTable">
-              <thead>
-                <tr><th>Date</th><th>Wakeup</th><th>Eat start</th><th>Eat end</th><th>Sleep</th></tr>
-              </thead>
-              <tbody id="dataBody"></tbody>
-            </table>
+          <div class="field">
+            <div class="data-head">
+              <div class="field-head"><span class="icon">📋</span><span class="label">Selected date</span></div>
+              <button class="link-btn" id="refreshBtn">↻ Refresh</button>
+            </div>
+            <ul class="list" id="selectedDateList"></ul>
+            <div class="muted-note">Full history lives on <a href="all-data.html" style="color:var(--accent);">All Data</a>.</div>
           </div>
         </section>
 
@@ -594,10 +579,6 @@
           .limit(1);
         if (error) throw error;
         return data.length ? data[0] : null;
-      },
-      async deleteEvent(id) {
-        const { error } = await supabase.from('events').delete().eq('id', id);
-        if (error) throw error;
       },
       async updateEvent(id, fields) {
         const { error } = await supabase.from('events').update(fields).eq('id', id);
@@ -764,7 +745,7 @@
         localStorage.setItem(TZ_KEY, currentTz);
         TZ_FIELDS.forEach(id => { if ($('tz_' + id)) $('tz_' + id).value = currentTz; });
         updateTzLabel();
-        renderDataTable().catch(() => {});
+        loadDay($('logDate').value).catch(() => {});
       });
       // per-event selectors
       TZ_FIELDS.forEach(id => { const s = $('tz_' + id); if (s) s.innerHTML = optionsHtml(currentTz); });
@@ -856,6 +837,20 @@
       });
     });
 
+    // Read-only summary of the selected date's 4 core events (full history
+    // with delete lives on the separate All Data page).
+    function renderSelectedDate(rows) {
+      const el = $('selectedDateList');
+      const byAspect = Object.fromEntries((rows || []).map(r => [r.aspect, r]));
+      el.innerHTML = FIELDS.map(f => {
+        const r = byAspect[f.id];
+        if (!r) return `<li><span>${f.label}</span><span class="when">—</span></li>`;
+        const z = r.tz || currentTz;
+        const tag = z === currentTz ? '' : ` <span class="zone-tag">${shortZone(z)}</span>`;
+        return `<li><span>${f.label}</span><span class="when">${fmtWhen(r.datetime, z)}${tag}</span></li>`;
+      }).join('');
+    }
+
     // Load the times already saved for the chosen log date into the fields.
     // aspect -> what was actually loaded (iso datetime + reduction), so Save can
     // tell an unedited field apart from a real change and skip the "already
@@ -866,7 +861,7 @@
       TZ_FIELDS.forEach(id => { if ($('tz_' + id)) $('tz_' + id).value = currentTz; });  // reset zones to default
       $('wakeupRedH').value = ''; $('wakeupRedM').value = '';
       loadedValues = {};
-      if (!logDate) return;
+      if (!logDate) { renderSelectedDate([]); return; }
       try {
         const rows = await DB.dayEvents(logDate);
         for (const r of rows) {
@@ -883,6 +878,7 @@
             $('wakeupRedM').value = r.reduction_min % 60 || '';
           }
         }
+        renderSelectedDate(rows);
         msg($('saveMsg'), rows.length ? `Loaded ${logDate}.` : `Nothing logged for ${logDate} yet.`,
           rows.length ? 'ok' : '');
       } catch (e) {
@@ -1075,7 +1071,9 @@
         loadedValues = {};
         await refreshFasting();
         await refreshSleepLast();
-        await renderDataTable();
+        await loadStats();
+        const rows = await DB.dayEvents(logDate).catch(() => []);
+        renderSelectedDate(rows);
       } catch (e) {
         msg($('saveMsg'), e.message || 'Save failed.', 'err');
       } finally {
@@ -1087,22 +1085,15 @@
     $('supabaseLink').href =
       `https://supabase.com/dashboard/project/${SUPABASE_REF}/editor`;
 
-    // One row per day; columns Date | Wakeup | Eat start | Eat end | Sleep.
+    // Live analysis: averages across logged days. Groups all events by log
+    // day (full history/delete lives on the separate All Data page — this
+    // page only needs the day-level summary, not the raw table).
     const dayKey = iso => {
       const d = new Date(iso);
       return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
     };
-    async function renderDataTable() {
+    async function loadStats() {
       const rows = await DB.allEvents();
-      const body = $('dataBody');
-      body.innerHTML = '';
-      if (!rows.length) {
-        body.innerHTML = '<tr><td colspan="5">Nothing yet.</td></tr>';
-        $('dupNote').classList.add('hidden');
-        renderStats({});
-        return;
-      }
-      // group by log day → { aspect: [rows] }
       const days = {};
       for (const r of rows) {
         const k = r.log_date || dayKey(r.datetime);   // fallback for old rows
@@ -1110,36 +1101,8 @@
         (days[k][r.aspect] = days[k][r.aspect] || []).push(r);
       }
       renderStats(days);
-      let dupCount = 0;
-      const cell = list => {
-        if (!list || !list.length) return '<td>—</td>';
-        const dup = list.length > 1;
-        if (dup) dupCount++;
-        const inner = list.map(r => {
-          const z = r.tz || currentTz;
-          const tag = z === currentTz ? '' : ` <span class="zone-tag">${shortZone(z)}</span>`;
-          return `${fmtWhen(r.datetime, z)}${tag} <button class="del-btn" data-id="${r.id}" title="Delete">✕</button>`;
-        }).join('<br>');
-        return `<td class="${dup ? 'dupcell' : ''}">${dup ? '⚠ ' : ''}${inner}</td>`;
-      };
-      for (const k of Object.keys(days).sort().reverse()) {
-        const d = days[k];
-        const dateLabel = new Date(`${k}T00:00`)
-          .toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${dateLabel}</td>` + FIELDS.map(f => cell(d[f.id])).join('');
-        body.appendChild(tr);
-      }
-      const note = $('dupNote');
-      if (dupCount) {
-        note.textContent = '⚠ Some days have more than one of the same entry. Remove extras with ✕.';
-        note.classList.remove('hidden');
-      } else {
-        note.classList.add('hidden');
-      }
     }
 
-    // Live analysis: averages across logged days.
     function renderStats(days) {
       const keys = Object.keys(days);
       $('statDays').textContent = keys.length || '—';
@@ -1171,26 +1134,14 @@
 
     $('refreshBtn').addEventListener('click', async () => {
       $('refreshBtn').disabled = true;
-      try { await renderDataTable(); await refreshFasting(); await refreshSleepLast(); }
+      try {
+        await loadDay($('logDate').value);
+        await loadStats();
+        await refreshFasting();
+        await refreshSleepLast();
+      }
       catch (e) { msg($('saveMsg'), 'Refresh failed: ' + e.message, 'err'); }
       finally { $('refreshBtn').disabled = false; }
-    });
-
-    // Delete a cell entry (event delegation on the table body)
-    $('dataBody').addEventListener('click', async (e) => {
-      const btn = e.target.closest('.del-btn');
-      if (!btn) return;
-      const ok = await confirmModal('Delete this entry? Cannot undo.',
-        { title: 'Delete', okText: 'Delete' });
-      if (!ok) return;
-      btn.disabled = true;
-      try {
-        await DB.deleteEvent(btn.dataset.id);
-        await renderDataTable();
-      } catch (err) {
-        btn.disabled = false;
-        msg($('saveMsg'), 'Delete failed: ' + err.message, 'err');
-      }
     });
 
     // ================================================================
@@ -1208,7 +1159,7 @@
       await loadSupplementChecklist($('logDate').value);
       await refreshFasting();
       await refreshSleepLast();
-      await renderDataTable();
+      await loadStats();
     }
 
     DB.onAuthChange(session => {
