@@ -1,3 +1,4 @@
 temp/
 scratchpad/
 *.xlsx
+.worktrees/
