@@ -1055,8 +1055,9 @@
         .map(f => ({ ...f, value: $(f.id).value }))
         .filter(f => f.value);
 
-      // Supplement log diff: staged (pendingLog) vs what was loaded (originalLog).
-      const logToUpsert = [...pendingLog.entries()].filter(([name, qty]) => originalLog.get(name) !== qty);
+      // Supplement log: upsert everything currently staged (idempotent even if
+      // unchanged from what's already saved), clear anything removed from the list.
+      const logToUpsert = [...pendingLog.entries()];
       const logToClear = [...originalLog.keys()].filter(name => !pendingLog.has(name));
 
       if (!filled.length && !logToUpsert.length && !logToClear.length) {
