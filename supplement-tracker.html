@@ -327,7 +327,7 @@
       },
       async receivedAll() {
         const { data, error } = await supabase.from('supplement_received')
-          .select('supplement, received_date').order('received_date', { ascending: false });
+          .select('supplement, received_date, quantity').order('received_date', { ascending: false });
         if (error) throw error;
         return data;
       },
@@ -538,12 +538,12 @@
     async function loadReceived() {
       const rows = await DB.receivedAll();
       const t = $('recvTable');
-      let html = '<thead><tr><th>Tablet</th><th>Date received</th></tr></thead><tbody>';
+      let html = '<thead><tr><th>Tablet</th><th>Qty</th><th>Date received</th></tr></thead><tbody>';
       if (!rows.length) {
-        html += '<tr><td colspan="2" class="muted-note">No entries yet.</td></tr>';
+        html += '<tr><td colspan="3" class="muted-note">No entries yet.</td></tr>';
       }
       for (const r of rows) {
-        html += `<tr><td>${r.supplement}</td><td>${r.received_date}</td></tr>`;
+        html += `<tr><td>${r.supplement}</td><td>${r.quantity ?? '—'}</td><td>${r.received_date}</td></tr>`;
       }
       html += '</tbody>';
       t.innerHTML = html;

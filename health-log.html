@@ -456,6 +456,7 @@
             <div class="muted-note">Log when a new bottle/pack of a tablet arrives.</div>
             <select class="tz-select-sm" id="recvTablet" aria-label="Tablet received"></select>
             <div class="row" style="margin-top:6px;">
+              <input type="number" id="recvQty" placeholder="Qty" min="1" style="max-width:80px;" />
               <input type="date" id="recvDate" />
               <button class="now-btn" id="recvSave">Save</button>
             </div>
@@ -666,8 +667,8 @@
         const ins = await supabase.from('supplement_ingredients').insert(rows);
         if (ins.error) throw ins.error;
       },
-      async receivedAdd(supplement, received_date) {
-        const { error } = await supabase.from('supplement_received').insert({ supplement, received_date });
+      async receivedAdd(supplement, received_date, quantity) {
+        const { error } = await supabase.from('supplement_received').insert({ supplement, received_date, quantity: quantity ?? null });
         if (error) throw error;
       },
     };
@@ -962,12 +963,14 @@
     $('recvSave').addEventListener('click', async () => {
       const tablet = $('recvTablet').value;
       const date = $('recvDate').value;
+      const qty = $('recvQty').value ? parseInt($('recvQty').value, 10) : null;
       if (!tablet) { msg($('recvMsg'), 'Add a tablet first.', 'err'); return; }
       if (!date) { msg($('recvMsg'), 'Pick a date.', 'err'); return; }
       $('recvSave').disabled = true;
       try {
-        await DB.receivedAdd(tablet, date);
-        msg($('recvMsg'), `Logged: ${tablet} received ${date}.`, 'ok');
+        await DB.receivedAdd(tablet, date, qty);
+        msg($('recvMsg'), `Logged: ${tablet}${qty ? ` (${qty})` : ''} received ${date}.`, 'ok');
+        $('recvQty').value = '';
       } catch (e) {
         msg($('recvMsg'), 'Save failed: ' + e.message, 'err');
       } finally { $('recvSave').disabled = false; }
