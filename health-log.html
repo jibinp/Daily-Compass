@@ -16,6 +16,7 @@
       --accent-press: #0ea5e9;
       --ok: #22c55e;
       --err: #f87171;
+      --warn: #f59e0b;
     }
     * { box-sizing: border-box; }
     body {
@@ -301,6 +302,7 @@
     }
     .mini-btn:active { background: var(--accent-press); transform: scale(0.97); }
     .mini-btn.ghost { background: var(--field); color: var(--text); border: 1px solid var(--border); }
+    .mini-btn.dirty { background: var(--warn); }
     .crs-form { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
     .crs-form input, .crs-form textarea {
       background: var(--field); border: 1px solid var(--border);
@@ -877,6 +879,7 @@
       weightUnit = $('weightUnit').value;
       localStorage.setItem(WEIGHT_UNIT_KEY, weightUnit);
       updateBmiDisplay();
+      updateDirtyIndicator();
     });
     $('heightUnit').addEventListener('change', () => {
       const raw = parseFloat($('heightInput').value);
@@ -884,6 +887,7 @@
       heightUnit = $('heightUnit').value;
       localStorage.setItem(HEIGHT_UNIT_KEY, heightUnit);
       updateBmiDisplay();
+      updateDirtyIndicator();
     });
 
     // What's currently saved for the selected date, in canonical units —
@@ -895,7 +899,7 @@
       $('weightInput').value = '';
       loadedWeightKg = null;
       loadedHeightCm = null;
-      if (!logDate) { updateBmiDisplay(); return; }
+      if (!logDate) { updateBmiDisplay(); updateDirtyIndicator(); return; }
       try {
         const row = await DB.bodyMetricsForDate(logDate);
         if (row && row.weight_kg != null) {
@@ -910,6 +914,7 @@
           $('heightInput').value = round1(heightFromCm(lastCm != null ? lastCm : 170, heightUnit));
         }
         updateBmiDisplay();
+        updateDirtyIndicator();
       } catch (e) {
         msg($('saveMsg'), 'Could not load weight/height: ' + e.message, 'err');
       }
@@ -1004,6 +1009,7 @@
       btn.addEventListener('click', () => {
         const id = btn.dataset.target;
         $(id).value = nowInTz(fieldTz(id));      // current wall-clock in that field's zone
+        updateDirtyIndicator();
       });
     });
 
@@ -1105,6 +1111,7 @@
             pendingLog.delete(name);
             renderPendingLog();
             renderSelectedDate();
+            updateDirtyIndicator();
           } catch (e) {
             msg($('saveMsg'), 'Delete failed: ' + e.message, 'err');
             btn.disabled = false;
@@ -1123,7 +1130,7 @@
       TZ_FIELDS.forEach(id => { if ($('tz_' + id)) $('tz_' + id).value = currentTz; });  // reset zones to default
       $('wakeupRedH').value = ''; $('wakeupRedM').value = '';
       loadedValues = {};
-      if (!logDate) { lastDayRows = []; renderSelectedDate(); return; }
+      if (!logDate) { lastDayRows = []; renderSelectedDate(); updateDirtyIndicator(); return; }
       try {
         const rows = await DB.dayEvents(logDate);
         for (const r of rows) {
@@ -1143,6 +1150,7 @@
         lastDayRows = rows;
         renderSelectedDate();
         msg($('saveMsg'), rows.length ? `Loaded ${logDate}.` : '', 'ok');
+        updateDirtyIndicator();
       } catch (e) {
         msg($('saveMsg'), 'Could not load day: ' + e.message, 'err');
       }
@@ -1188,6 +1196,7 @@
         btn.addEventListener('click', () => {
           pendingLog.delete(btn.dataset.remove);
           renderPendingLog();
+          updateDirtyIndicator();
         });
       });
     }
@@ -1199,6 +1208,7 @@
       if (!qty || qty < 1) { msg($('logMsg'), 'Enter a quantity.', 'err'); return; }
       pendingLog.set(name, qty);
       renderPendingLog();
+      updateDirtyIndicator();
       $('logQty').value = '';
       msg($('logMsg'), '', '');
     });
@@ -1207,13 +1217,14 @@
       const el = $('logPendingList');
       pendingLog = new Map();
       originalLog = new Map();
-      if (!logDate) { renderPendingLog(); renderSelectedDate(); return; }
+      if (!logDate) { renderPendingLog(); renderSelectedDate(); updateDirtyIndicator(); return; }
       try {
         if (!activeSupplements.length) activeSupplements = await DB.activeSupplements();
         populateLogTabletSelect();
         if (!activeSupplements.length) {
           el.innerHTML = '<li><span class="when">No active tablets — click "+ Add tablet" below.</span></li>';
           renderSelectedDate();
+          updateDirtyIndicator();
           return;
         }
         const rows = await DB.supplementLogForDate(logDate);
@@ -1226,6 +1237,7 @@
         }
         renderPendingLog();
         renderSelectedDate();
+        updateDirtyIndicator();
       } catch (e) {
         el.innerHTML = '<li><span class="when">Could not load: ' + e.message + '</span></li>';
       }
@@ -1302,33 +1314,13 @@
       await DB.signOut();
     });
 
-    $('saveBtn').addEventListener('click', async () => {
-      const logDate = $('topbarLogDate').value;         // the log day (YYYY-MM-DD)
-      if (!logDate) { msg($('saveMsg'), 'Pick the log date at top.', 'err'); return; }
+    // Everything that would happen if Save were clicked right now — shared by
+    // the Save handler itself and the live "unsaved changes" indicator.
+    function getPendingChanges() {
       const wakeupReduction = (parseInt($('wakeupRedH').value, 10) || 0) * 60 + (parseInt($('wakeupRedM').value, 10) || 0);
       const filled = FIELDS
         .map(f => ({ ...f, value: $(f.id).value }))
         .filter(f => f.value);
-
-      // Supplement log: upsert everything currently staged (idempotent even if
-      // unchanged from what's already saved), clear anything removed from the list.
-      const logToUpsert = [...pendingLog.entries()];
-      const logToClear = [...originalLog.keys()].filter(name => !pendingLog.has(name));
-
-      // Weight/BMI: diff against what was loaded (both canonicalized to kg/cm).
-      const weightRaw = parseFloat($('weightInput').value);
-      const heightRaw = parseFloat($('heightInput').value);
-      const bmiWeightKg = isNaN(weightRaw) ? null : round1(weightToKg(weightRaw, weightUnit));
-      const bmiHeightCm = isNaN(heightRaw) ? null : round1(heightToCm(heightRaw, heightUnit));
-      const bmiChanged = bmiWeightKg !== loadedWeightKg || bmiHeightCm !== loadedHeightCm;
-
-      if (!filled.length && !logToUpsert.length && !logToClear.length && !bmiChanged) {
-        msg($('saveMsg'), 'Fill at least one field or add a tablet to the log.', 'err'); return;
-      }
-
-      // Compute each filled field's UTC instant now, then drop anything that's
-      // identical to what was loaded — an untouched field shouldn't trigger an
-      // "already logged" prompt or a needless DB write.
       const withIso = filled.map(f => {
         const tz = fieldTz(f.id);
         const iso = zonedToUtc(f.value, tz).toISOString();
@@ -1342,6 +1334,36 @@
         const sameReduction = f.id !== 'wakeup' || (loaded.reduction_min || 0) === (f.reduction_min || 0);
         return !(sameTime && sameReduction);
       });
+      const logToUpsert = [...pendingLog.entries()];
+      const logToClear = [...originalLog.keys()].filter(name => !pendingLog.has(name));
+      const weightRaw = parseFloat($('weightInput').value);
+      const heightRaw = parseFloat($('heightInput').value);
+      const bmiWeightKg = isNaN(weightRaw) ? null : round1(weightToKg(weightRaw, weightUnit));
+      const bmiHeightCm = isNaN(heightRaw) ? null : round1(heightToCm(heightRaw, heightUnit));
+      const bmiChanged = bmiWeightKg !== loadedWeightKg || bmiHeightCm !== loadedHeightCm;
+      const dirty = toSave.length > 0 || logToUpsert.length > 0 || logToClear.length > 0 || bmiChanged;
+      return { filled, toSave, logToUpsert, logToClear, bmiWeightKg, bmiHeightCm, bmiChanged, dirty };
+    }
+    // Reflects unsaved changes on the topbar Save button (label + color).
+    function updateDirtyIndicator() {
+      const { dirty } = getPendingChanges();
+      $('saveBtn').classList.toggle('dirty', dirty);
+      $('saveBtn').textContent = dirty ? 'Save *' : 'Save';
+    }
+    FIELDS.forEach(f => $(f.id).addEventListener('input', updateDirtyIndicator));
+    $('wakeupRedH').addEventListener('input', updateDirtyIndicator);
+    $('wakeupRedM').addEventListener('input', updateDirtyIndicator);
+    $('weightInput').addEventListener('input', updateDirtyIndicator);
+    $('heightInput').addEventListener('input', updateDirtyIndicator);
+
+    $('saveBtn').addEventListener('click', async () => {
+      const logDate = $('topbarLogDate').value;         // the log day (YYYY-MM-DD)
+      if (!logDate) { msg($('saveMsg'), 'Pick the log date at top.', 'err'); return; }
+      const { filled, toSave, logToUpsert, logToClear, bmiWeightKg, bmiHeightCm, bmiChanged } = getPendingChanges();
+
+      if (!filled.length && !logToUpsert.length && !logToClear.length && !bmiChanged) {
+        msg($('saveMsg'), 'Fill at least one field or add a tablet to the log.', 'err'); return;
+      }
       if (!toSave.length && !logToUpsert.length && !logToClear.length && !bmiChanged) {
         msg($('saveMsg'), 'No changes to save.', ''); return;
       }
@@ -1405,6 +1427,7 @@
         await loadStats();
         lastDayRows = await DB.dayEvents(logDate).catch(() => []);
         renderSelectedDate();
+        updateDirtyIndicator();
       } catch (e) {
         msg($('saveMsg'), e.message || 'Save failed.', 'err');
       } finally {
