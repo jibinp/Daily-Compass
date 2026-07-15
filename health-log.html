@@ -380,14 +380,6 @@
 
         <!-- ---------- LEFT: data entry ---------- -->
         <section class="col">
-          <div class="field">
-            <div class="field-head"><span class="icon">📅</span><span class="label">Log date</span></div>
-            <div class="row">
-              <input type="date" id="logDate" />
-              <button class="now-btn" id="todayBtn">Today</button>
-            </div>
-          </div>
-
           <div class="grid2">
             <div class="field">
               <div class="field-head"><span class="icon">☀️</span><span class="label">Wakeup</span></div>
@@ -784,7 +776,7 @@
         localStorage.setItem(TZ_KEY, currentTz);
         TZ_FIELDS.forEach(id => { if ($('tz_' + id)) $('tz_' + id).value = currentTz; });
         updateTzLabel();
-        loadDay($('logDate').value).catch(() => {});
+        loadDay($('topbarLogDate').value).catch(() => {});
       });
       // per-event selectors
       TZ_FIELDS.forEach(id => { const s = $('tz_' + id); if (s) s.innerHTML = optionsHtml(currentTz); });
@@ -813,10 +805,8 @@
       el.className = 'msg' + (kind ? ' ' + kind : '');
     }
 
-    // Switch the selected log date — keeps the form's Log date field and the
-    // topbar date input in sync, wherever the change came from.
+    // Switch the selected log date (topbar date input is the only picker now).
     function goToDate(value) {
-      $('logDate').value = value;
       $('topbarLogDate').value = value;
       loadDay(value);
       loadSupplementChecklist(value);
@@ -1057,15 +1047,13 @@
         activeSupplements = [];   // force a refetch so the new one shows up
         $('suppForm').classList.add('hidden');
         suppFormMsg('', '');
-        await loadSupplementChecklist($('logDate').value);
+        await loadSupplementChecklist($('topbarLogDate').value);
       } catch (e) {
         suppFormMsg('Save failed: ' + (e.message || ''), 'err');
       } finally { $('sfSave').disabled = false; }
     });
 
-    $('logDate').addEventListener('change', () => goToDate($('logDate').value));
     $('topbarLogDate').addEventListener('change', () => goToDate($('topbarLogDate').value));
-    $('todayBtn').addEventListener('click', () => goToDate(todayDate()));
     $('topbarTodayBtn').addEventListener('click', () => goToDate(todayDate()));
 
     $('logoutBtn').addEventListener('click', async () => {
@@ -1073,7 +1061,7 @@
     });
 
     $('saveBtn').addEventListener('click', async () => {
-      const logDate = $('logDate').value;              // the log day (YYYY-MM-DD)
+      const logDate = $('topbarLogDate').value;         // the log day (YYYY-MM-DD)
       if (!logDate) { msg($('saveMsg'), 'Pick the log date at top.', 'err'); return; }
       const wakeupReduction = (parseInt($('wakeupRedH').value, 10) || 0) * 60 + (parseInt($('wakeupRedM').value, 10) || 0);
       const filled = FIELDS
@@ -1200,7 +1188,7 @@
     $('refreshBtn').addEventListener('click', async () => {
       $('refreshBtn').disabled = true;
       try {
-        await loadDay($('logDate').value);
+        await loadDay($('topbarLogDate').value);
         await loadStats();
         await refreshFasting();
         await refreshSleepLast();
@@ -1218,11 +1206,10 @@
     }
     async function showApp(session) {
       $('appView').classList.remove('hidden');
-      if (!$('logDate').value) $('logDate').value = todayDate();
+      if (!$('topbarLogDate').value) $('topbarLogDate').value = todayDate();
       if (!$('recvDate').value) $('recvDate').value = todayDate();
-      $('topbarLogDate').value = $('logDate').value;
-      await loadDay($('logDate').value);
-      await loadSupplementChecklist($('logDate').value);
+      await loadDay($('topbarLogDate').value);
+      await loadSupplementChecklist($('topbarLogDate').value);
       await refreshFasting();
       await refreshSleepLast();
       await loadStats();
