@@ -865,18 +865,24 @@
       });
     });
 
-    // Summary of the selected date's 4 core events, with delete (full history
-    // lives on the separate All Data page).
-    function renderSelectedDate(rows) {
+    // Full record for the selected date — the 4 core events AND the
+    // supplement log, both with delete (full event history lives on the
+    // separate All Data page; this card is the day's data at a glance).
+    let lastDayRows = [];   // last-fetched events for the selected date
+    function renderSelectedDate() {
       const el = $('selectedDateList');
-      const byAspect = Object.fromEntries((rows || []).map(r => [r.aspect, r]));
-      el.innerHTML = FIELDS.map(f => {
+      const byAspect = Object.fromEntries(lastDayRows.map(r => [r.aspect, r]));
+      const fieldRows = FIELDS.map(f => {
         const r = byAspect[f.id];
         if (!r) return `<li><span>${f.label}</span><span class="when">—</span></li>`;
         const z = r.tz || currentTz;
         const tag = z === currentTz ? '' : ` <span class="zone-tag">${shortZone(z)}</span>`;
         return `<li><span>${f.label}</span><span class="when">${fmtWhen(r.datetime, z)}${tag} <button class="del-btn" data-del="${r.id}" title="Delete">✕</button></span></li>`;
-      }).join('');
+      });
+      const suppRows = [...originalLog.entries()].map(([name, qty]) =>
+        `<li><span>${name}</span><span class="when">×${qty} <button class="del-btn" data-del-supp="${name}" title="Delete">✕</button></span></li>`
+      );
+      el.innerHTML = fieldRows.join('') + suppRows.join('');
       el.querySelectorAll('[data-del]').forEach(btn => {
         btn.addEventListener('click', async () => {
           const ok = await confirmModal('Delete this entry? Cannot undo.', { title: 'Delete', okText: 'Delete' });
@@ -885,6 +891,24 @@
           try {
             await DB.deleteEvent(btn.dataset.del);
             await loadDay($('topbarLogDate').value);
+          } catch (e) {
+            msg($('saveMsg'), 'Delete failed: ' + e.message, 'err');
+            btn.disabled = false;
+          }
+        });
+      });
+      el.querySelectorAll('[data-del-supp]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const ok = await confirmModal('Remove this from the log? Cannot undo.', { title: 'Delete', okText: 'Delete' });
+          if (!ok) return;
+          const name = btn.dataset.delSupp;
+          btn.disabled = true;
+          try {
+            await DB.supplementLogSet($('topbarLogDate').value, name, false, null);
+            originalLog.delete(name);
+            pendingLog.delete(name);
+            renderPendingLog();
+            renderSelectedDate();
           } catch (e) {
             msg($('saveMsg'), 'Delete failed: ' + e.message, 'err');
             btn.disabled = false;
@@ -903,7 +927,7 @@
       TZ_FIELDS.forEach(id => { if ($('tz_' + id)) $('tz_' + id).value = currentTz; });  // reset zones to default
       $('wakeupRedH').value = ''; $('wakeupRedM').value = '';
       loadedValues = {};
-      if (!logDate) { renderSelectedDate([]); return; }
+      if (!logDate) { lastDayRows = []; renderSelectedDate(); return; }
       try {
         const rows = await DB.dayEvents(logDate);
         for (const r of rows) {
@@ -920,7 +944,8 @@
             $('wakeupRedM').value = r.reduction_min % 60 || '';
           }
         }
-        renderSelectedDate(rows);
+        lastDayRows = rows;
+        renderSelectedDate();
         msg($('saveMsg'), rows.length ? `Loaded ${logDate}.` : '', 'ok');
       } catch (e) {
         msg($('saveMsg'), 'Could not load day: ' + e.message, 'err');
@@ -983,12 +1008,13 @@
       const el = $('logPendingList');
       pendingLog = new Map();
       originalLog = new Map();
-      if (!logDate) { renderPendingLog(); return; }
+      if (!logDate) { renderPendingLog(); renderSelectedDate(); return; }
       try {
         if (!activeSupplements.length) activeSupplements = await DB.activeSupplements();
         populateLogTabletSelect();
         if (!activeSupplements.length) {
           el.innerHTML = '<li><span class="when">No active tablets — click "+ Add tablet" below.</span></li>';
+          renderSelectedDate();
           return;
         }
         const rows = await DB.supplementLogForDate(logDate);
@@ -1000,6 +1026,7 @@
           }
         }
         renderPendingLog();
+        renderSelectedDate();
       } catch (e) {
         el.innerHTML = '<li><span class="when">Could not load: ' + e.message + '</span></li>';
       }
@@ -1160,8 +1187,8 @@
         await refreshFasting();
         await refreshSleepLast();
         await loadStats();
-        const rows = await DB.dayEvents(logDate).catch(() => []);
-        renderSelectedDate(rows);
+        lastDayRows = await DB.dayEvents(logDate).catch(() => []);
+        renderSelectedDate();
       } catch (e) {
         msg($('saveMsg'), e.message || 'Save failed.', 'err');
       } finally {
