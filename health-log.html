@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Health Log - Data Entry — Daily Compass</title>
+  <title>Data Entry — Daily Compass</title>
   <style>
     :root {
       --bg: #0f172a;
@@ -204,6 +204,7 @@
       background: var(--bg);
     }
     .topbar-title { font-weight: 700; font-size: 1rem; color: var(--text); }
+    .topbar-left { display: flex; align-items: center; gap: 10px; }
     .topbar-actions { display: flex; align-items: center; gap: 14px; }
     .topbar-date { font-size: 0.8rem; color: var(--muted); white-space: nowrap; }
     .link-btn {
@@ -351,8 +352,10 @@
   </nav>
 
   <div class="topbar">
-    <button class="hamburger" id="navToggle" aria-label="Open menu">☰</button>
-    <span class="topbar-title">🩺 Health Log - Data Entry</span>
+    <div class="topbar-left">
+      <button class="hamburger" id="navToggle" aria-label="Open menu">☰</button>
+      <span class="topbar-title">📅 Data Entry</span>
+    </div>
     <div class="topbar-actions">
       <span class="topbar-date" id="topbarDate"></span>
       <button class="mini-btn" id="saveBtn">Save</button>
