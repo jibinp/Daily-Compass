@@ -589,11 +589,15 @@
         const { error } = await supabase.from('events').update(fields).eq('id', id);
         if (error) throw error;
       },
+      async deleteEvent(id) {
+        const { error } = await supabase.from('events').delete().eq('id', id);
+        if (error) throw error;
+      },
       // all events logged on a given day → [{ aspect, datetime }]
       async dayEvents(logDate) {
         const { data, error } = await supabase
           .from('events')
-          .select('aspect, datetime, tz, reduction_min')
+          .select('id, aspect, datetime, tz, reduction_min')
           .eq('log_date', logDate)
           .order('datetime', { ascending: true });
         if (error) throw error;
@@ -861,8 +865,8 @@
       });
     });
 
-    // Read-only summary of the selected date's 4 core events (full history
-    // with delete lives on the separate All Data page).
+    // Summary of the selected date's 4 core events, with delete (full history
+    // lives on the separate All Data page).
     function renderSelectedDate(rows) {
       const el = $('selectedDateList');
       const byAspect = Object.fromEntries((rows || []).map(r => [r.aspect, r]));
@@ -871,8 +875,22 @@
         if (!r) return `<li><span>${f.label}</span><span class="when">—</span></li>`;
         const z = r.tz || currentTz;
         const tag = z === currentTz ? '' : ` <span class="zone-tag">${shortZone(z)}</span>`;
-        return `<li><span>${f.label}</span><span class="when">${fmtWhen(r.datetime, z)}${tag}</span></li>`;
+        return `<li><span>${f.label}</span><span class="when">${fmtWhen(r.datetime, z)}${tag} <button class="del-btn" data-del="${r.id}" title="Delete">✕</button></span></li>`;
       }).join('');
+      el.querySelectorAll('[data-del]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const ok = await confirmModal('Delete this entry? Cannot undo.', { title: 'Delete', okText: 'Delete' });
+          if (!ok) return;
+          btn.disabled = true;
+          try {
+            await DB.deleteEvent(btn.dataset.del);
+            await loadDay($('topbarLogDate').value);
+          } catch (e) {
+            msg($('saveMsg'), 'Delete failed: ' + e.message, 'err');
+            btn.disabled = false;
+          }
+        });
+      });
     }
 
     // Load the times already saved for the chosen log date into the fields.
