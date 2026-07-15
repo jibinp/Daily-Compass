@@ -151,6 +151,18 @@
       background: var(--field); border: 1px solid var(--border); color: var(--err);
       border-radius: 8px; padding: 0 10px; cursor: pointer; font-size: 1rem; flex: 0 0 auto;
     }
+    .tablet-thumb {
+      width: 56px; height: 56px; border-radius: 50%; object-fit: cover;
+      border: 1px solid var(--border); margin-top: 6px; display: block;
+    }
+    .tablet-thumb-sm {
+      width: 28px; height: 28px; border-radius: 50%; object-fit: cover;
+      border: 1px solid var(--border); flex: 0 0 auto; vertical-align: middle; margin-right: 8px;
+    }
+    .tablet-thumb-sm.placeholder {
+      display: inline-flex; align-items: center; justify-content: center;
+      background: var(--field); font-size: 0.85rem;
+    }
     /* ---- history table ---- */
     .hist-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
     .hist-table th, .hist-table td { padding: 7px 10px; border-bottom: 1px solid var(--border); text-align: center; white-space: nowrap; }
@@ -215,6 +227,9 @@
           <input type="text" id="sfName" placeholder="e.g. Daily Multivitamin" />
           <label class="muted-note" for="sfDose">Serving</label>
           <input type="text" id="sfDose" placeholder="e.g. 1 tablet" />
+          <label class="muted-note" for="sfImage">Picture</label>
+          <input type="file" id="sfImage" accept="image/*" />
+          <img id="sfImagePreview" class="tablet-thumb hidden" alt="" />
           <label class="muted-note" for="sfNotes">Notes</label>
           <textarea id="sfNotes" rows="2" placeholder="Optional"></textarea>
           <label class="muted-note">Ingredients</label>
@@ -268,16 +283,25 @@
 
       async supplementsAll() {
         const { data, error } = await supabase.from('supplements')
-          .select('name, dose, notes, active, sort_order').order('sort_order', { ascending: true }).order('name', { ascending: true });
+          .select('name, dose, notes, active, sort_order, image_url').order('sort_order', { ascending: true }).order('name', { ascending: true });
         if (error) throw error;
         return data;
       },
-      async supplementUpsert({ name, dose, notes, active, sort_order }) {
+      async supplementUpsert({ name, dose, notes, active, sort_order, image_url }) {
         const { error } = await supabase.from('supplements').upsert({
           name, dose: dose || null, notes: notes || null,
-          active: active !== false, sort_order: sort_order ?? 0,
+          active: active !== false, sort_order: sort_order ?? 0, image_url: image_url || null,
         }, { onConflict: 'name' });
         if (error) throw error;
+      },
+      // upload a tablet picture, return its public URL
+      async uploadTabletImage(file, tabletName) {
+        const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+        const path = `${tabletName.replace(/[^a-z0-9]/gi, '_')}-${Date.now()}.${ext}`;
+        const { error } = await supabase.storage.from('tablet-images').upload(path, file, { upsert: true });
+        if (error) throw error;
+        const { data } = supabase.storage.from('tablet-images').getPublicUrl(path);
+        return data.publicUrl;
       },
       async supplementSetActive(name, active) {
         const { error } = await supabase.from('supplements').update({ active }).eq('name', name);
@@ -368,11 +392,26 @@
     }
     $('sfIngAdd').addEventListener('click', () => addIngredientRow());
 
+    // local preview of the picked file, before it's uploaded
+    $('sfImage').addEventListener('change', () => {
+      const file = $('sfImage').files[0];
+      const preview = $('sfImagePreview');
+      if (!file) return;
+      preview.src = URL.createObjectURL(file);
+      preview.classList.remove('hidden');
+    });
+
+    let openSuppImageUrl = null;   // existing image_url of the tablet being edited, if any
     function openSuppForm(s) {
       $('sfOrigName').value = s.name;
       $('sfName').value = s.name;
       $('sfDose').value = s.dose || '';
       $('sfNotes').value = s.notes || '';
+      $('sfImage').value = '';
+      openSuppImageUrl = s.image_url || null;
+      const preview = $('sfImagePreview');
+      if (openSuppImageUrl) { preview.src = openSuppImageUrl; preview.classList.remove('hidden'); }
+      else { preview.src = ''; preview.classList.add('hidden'); }
       $('sfIngredients').innerHTML = '';
       const ings = ingredientsBySupp[s.name] || [];
       if (ings.length) ings.forEach(i => addIngredientRow(i.ingredient, i.amount || ''));
@@ -389,13 +428,16 @@
       $('sfSave').disabled = true;
       suppMsg('Saving…', '');
       try {
+        let imageUrl = openSuppImageUrl;
+        const file = $('sfImage').files[0];
+        if (file) imageUrl = await DB.uploadTabletImage(file, name);
         if (origName && origName !== name) {
           await DB.supplementSetActive(origName, false);   // don't silently orphan the old row
         }
         const existing = supplements.find(s => s.name === name);
         await DB.supplementUpsert({
           name, dose: $('sfDose').value.trim(), notes: $('sfNotes').value.trim(),
-          active: true, sort_order: existing ? existing.sort_order : supplements.length,
+          active: true, sort_order: existing ? existing.sort_order : supplements.length, image_url: imageUrl,
         });
         await DB.ingredientsReplace(name, collectIngredients());
         suppMsg('Saved.', 'ok');
@@ -417,8 +459,11 @@
         const ingText = ings.length
           ? ings.map(i => i.amount ? `${i.ingredient} (${i.amount})` : i.ingredient).join(', ')
           : '—';
+        const thumb = s.image_url
+          ? `<img src="${s.image_url}" class="tablet-thumb-sm" alt="" />`
+          : '<span class="tablet-thumb-sm placeholder">💊</span>';
         html += `<tr class="${s.active ? '' : 'archived'}">
-          <td>${s.name}</td><td>${s.dose || '—'}</td><td class="ing">${ingText}</td><td>${s.notes || '—'}</td>
+          <td>${thumb}${s.name}</td><td>${s.dose || '—'}</td><td class="ing">${ingText}</td><td>${s.notes || '—'}</td>
           <td>${s.active ? 'Active' : 'Archived'}</td>
           <td class="actions">
             <button class="mini-btn ghost" data-edit="${s.name}">Edit</button>

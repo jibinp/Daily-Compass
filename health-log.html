@@ -303,6 +303,18 @@
       border-radius: 8px; padding: 0 10px; cursor: pointer; font-size: 1rem; flex: 0 0 auto;
     }
     .ing-list { color: var(--muted); font-size: 0.8rem; }
+    .tablet-thumb {
+      width: 56px; height: 56px; border-radius: 50%; object-fit: cover;
+      border: 1px solid var(--border); margin-top: 6px; display: block;
+    }
+    .tablet-thumb-sm {
+      width: 28px; height: 28px; border-radius: 50%; object-fit: cover;
+      border: 1px solid var(--border); flex: 0 0 auto;
+    }
+    .tablet-thumb-sm.placeholder {
+      display: inline-flex; align-items: center; justify-content: center;
+      background: var(--field); font-size: 0.85rem;
+    }
   </style>
 </head>
 <body>
@@ -424,6 +436,9 @@
               <input type="text" id="sfName" placeholder="e.g. Daily Multivitamin" />
               <label class="muted-note" for="sfDose">Serving</label>
               <input type="text" id="sfDose" placeholder="e.g. 1 tablet" />
+              <label class="muted-note" for="sfImage">Picture</label>
+              <input type="file" id="sfImage" accept="image/*" />
+              <img id="sfImagePreview" class="tablet-thumb hidden" alt="" />
               <label class="muted-note">Ingredients</label>
               <div id="sfIngredients"></div>
               <button class="mini-btn ghost" id="sfIngAdd" type="button">＋ Add ingredient</button>
@@ -608,9 +623,18 @@
       // ---- Supplement Tracker (entry lives here; management/history on its own page) ----
       async activeSupplements() {
         const { data, error } = await supabase.from('supplements')
-          .select('name, dose').eq('active', true).order('sort_order', { ascending: true }).order('name', { ascending: true });
+          .select('name, dose, image_url').eq('active', true).order('sort_order', { ascending: true }).order('name', { ascending: true });
         if (error) throw error;
         return data;
+      },
+      // upload a tablet picture, return its public URL
+      async uploadTabletImage(file, tabletName) {
+        const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+        const path = `${tabletName.replace(/[^a-z0-9]/gi, '_')}-${Date.now()}.${ext}`;
+        const { error } = await supabase.storage.from('tablet-images').upload(path, file, { upsert: true });
+        if (error) throw error;
+        const { data } = supabase.storage.from('tablet-images').getPublicUrl(path);
+        return data.publicUrl;
       },
       async supplementLogForDate(log_date) {
         const { data, error } = await supabase.from('supplement_log')
@@ -624,9 +648,9 @@
         }, { onConflict: 'log_date,supplement' });
         if (error) throw error;
       },
-      async supplementUpsert({ name, dose, sort_order }) {
+      async supplementUpsert({ name, dose, sort_order, image_url }) {
         const { error } = await supabase.from('supplements').upsert({
-          name, dose: dose || null, active: true, sort_order: sort_order ?? 0,
+          name, dose: dose || null, active: true, sort_order: sort_order ?? 0, image_url: image_url || null,
         }, { onConflict: 'name' });
         if (error) throw error;
       },
@@ -901,8 +925,12 @@
         const takenMap = Object.fromEntries(rows.map(r => [r.supplement, r.taken]));
         el.innerHTML = activeSupplements.map(s => {
           const taken = takenMap[s.name] === true;
+          const thumb = s.image_url
+            ? `<img src="${s.image_url}" class="tablet-thumb-sm" alt="" />`
+            : '<span class="tablet-thumb-sm placeholder">💊</span>';
           return `<label class="check-row${taken ? ' taken' : ''}" data-name="${s.name}">
             <input type="checkbox" ${taken ? 'checked' : ''} />
+            ${thumb}
             <span class="cr-name">${s.name}</span><span class="cr-dose">${s.dose || ''}</span>
           </label>`;
         }).join('');
@@ -970,10 +998,20 @@
     }
     $('sfIngAdd').addEventListener('click', () => addIngredientRow());
 
+    // local preview of the picked file, before it's uploaded
+    $('sfImage').addEventListener('change', () => {
+      const file = $('sfImage').files[0];
+      const preview = $('sfImagePreview');
+      if (!file) return;
+      preview.src = URL.createObjectURL(file);
+      preview.classList.remove('hidden');
+    });
+
     $('suppAddToggle').addEventListener('click', () => {
       $('suppForm').classList.toggle('hidden');
       if (!$('suppForm').classList.contains('hidden')) {
         $('sfName').value = ''; $('sfDose').value = '';
+        $('sfImage').value = ''; $('sfImagePreview').src = ''; $('sfImagePreview').classList.add('hidden');
         $('sfIngredients').innerHTML = ''; addIngredientRow();
         suppFormMsg('', ''); $('sfName').focus();
       }
@@ -985,7 +1023,10 @@
       $('sfSave').disabled = true;
       suppFormMsg('Saving…', '');
       try {
-        await DB.supplementUpsert({ name, dose: $('sfDose').value.trim(), sort_order: activeSupplements.length });
+        let imageUrl = null;
+        const file = $('sfImage').files[0];
+        if (file) imageUrl = await DB.uploadTabletImage(file, name);
+        await DB.supplementUpsert({ name, dose: $('sfDose').value.trim(), sort_order: activeSupplements.length, image_url: imageUrl });
         await DB.ingredientsReplace(name, collectIngredients());
         activeSupplements = [];   // force a refetch so the new one shows up
         $('suppForm').classList.add('hidden');
