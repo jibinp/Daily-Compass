@@ -144,9 +144,11 @@
     .supp-table td.actions { text-align: right; white-space: nowrap; }
     .supp-table td.actions .mini-btn { padding: 4px 8px; font-size: 0.75rem; }
     .supp-table td.ing { white-space: normal; color: var(--muted); font-size: 0.82rem; max-width: 260px; }
-    .ing-row { display: flex; gap: 6px; margin-bottom: 6px; }
+    .ing-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
     .ing-row input { flex: 1; min-width: 0; }
-    .ing-row input.ing-amount { flex: 0 0 90px; }
+    .ing-row input.ing-amount { flex: 0 0 60px; }
+    .ing-row input.ing-unit { flex: 0 0 60px; }
+    .ing-row input.ing-form { flex: 1 1 140px; }
     .ing-row .ing-rm {
       background: var(--field); border: 1px solid var(--border); color: var(--err);
       border-radius: 8px; padding: 0 10px; cursor: pointer; font-size: 1rem; flex: 0 0 auto;
@@ -309,7 +311,7 @@
       },
       async ingredientsAll() {
         const { data, error } = await supabase.from('supplement_ingredients')
-          .select('supplement, ingredient, amount').order('sort_order', { ascending: true });
+          .select('supplement, ingredient, amount_value, amount_unit, amount_form').order('sort_order', { ascending: true });
         if (error) throw error;
         return data;
       },
@@ -320,7 +322,9 @@
         if (del.error) throw del.error;
         if (!ingredients.length) return;
         const rows = ingredients.map((ing, i) => ({
-          supplement, ingredient: ing.ingredient, amount: ing.amount || null, sort_order: i,
+          supplement, ingredient: ing.ingredient,
+          amount_value: ing.amount_value, amount_unit: ing.amount_unit, amount_form: ing.amount_form,
+          sort_order: i,
         }));
         const ins = await supabase.from('supplement_ingredients').insert(rows);
         if (ins.error) throw ins.error;
@@ -372,22 +376,29 @@
     // ================================================================
     // Manage supplements
     // ================================================================
-    function addIngredientRow(ingredient = '', amount = '') {
+    function addIngredientRow(ingredient = '', amountValue = '', amountUnit = '', amountForm = '') {
       const row = document.createElement('div');
       row.className = 'ing-row';
       row.innerHTML = `
         <input type="text" class="ing-name" placeholder="Ingredient, e.g. Vitamin D3" value="${ingredient}" />
-        <input type="text" class="ing-amount" placeholder="Amount" value="${amount}" />
+        <input type="number" step="any" class="ing-amount" placeholder="Amt" value="${amountValue}" />
+        <input type="text" class="ing-unit" placeholder="Unit" value="${amountUnit}" />
+        <input type="text" class="ing-form" placeholder="Form, e.g. Zinc Citrate" value="${amountForm}" />
         <button type="button" class="ing-rm" title="Remove">✕</button>`;
       row.querySelector('.ing-rm').addEventListener('click', () => row.remove());
       $('sfIngredients').appendChild(row);
     }
     function collectIngredients() {
       return [...$('sfIngredients').querySelectorAll('.ing-row')]
-        .map(row => ({
-          ingredient: row.querySelector('.ing-name').value.trim(),
-          amount: row.querySelector('.ing-amount').value.trim(),
-        }))
+        .map(row => {
+          const rawAmount = row.querySelector('.ing-amount').value.trim();
+          return {
+            ingredient: row.querySelector('.ing-name').value.trim(),
+            amount_value: rawAmount === '' ? null : Number(rawAmount),
+            amount_unit: row.querySelector('.ing-unit').value.trim() || null,
+            amount_form: row.querySelector('.ing-form').value.trim() || null,
+          };
+        })
         .filter(i => i.ingredient);
     }
     $('sfIngAdd').addEventListener('click', () => addIngredientRow());
@@ -414,7 +425,7 @@
       else { preview.src = ''; preview.classList.add('hidden'); }
       $('sfIngredients').innerHTML = '';
       const ings = ingredientsBySupp[s.name] || [];
-      if (ings.length) ings.forEach(i => addIngredientRow(i.ingredient, i.amount || ''));
+      if (ings.length) ings.forEach(i => addIngredientRow(i.ingredient, i.amount_value ?? '', i.amount_unit || '', i.amount_form || ''));
       else addIngredientRow();
       $('suppForm').classList.remove('hidden');
       suppMsg('', '');
@@ -457,7 +468,11 @@
       for (const s of supplements) {
         const ings = ingredientsBySupp[s.name] || [];
         const ingText = ings.length
-          ? ings.map(i => i.amount ? `${i.ingredient} (${i.amount})` : i.ingredient).join(', ')
+          ? ings.map(i => {
+              const amt = [i.amount_value, i.amount_unit].filter(Boolean).join(' ');
+              const parts = [amt, i.amount_form].filter(Boolean).join(' ');
+              return parts ? `${i.ingredient} (${parts})` : i.ingredient;
+            }).join(', ')
           : '—';
         const thumb = s.image_url
           ? `<img src="${s.image_url}" class="tablet-thumb-sm" alt="" />`

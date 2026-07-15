@@ -321,9 +321,11 @@
     .crs-msg { font-size: 0.83rem; margin: 6px 0; min-height: 1.1em; }
     .crs-msg.ok { color: var(--ok); }
     .crs-msg.err { color: var(--err); }
-    .ing-row { display: flex; gap: 6px; margin-bottom: 6px; }
+    .ing-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
     .ing-row input { flex: 1; min-width: 0; }
-    .ing-row input.ing-amount { flex: 0 0 90px; }
+    .ing-row input.ing-amount { flex: 0 0 60px; }
+    .ing-row input.ing-unit { flex: 0 0 60px; }
+    .ing-row input.ing-form { flex: 1 1 140px; }
     .ing-row .ing-rm {
       background: var(--field); border: 1px solid var(--border); color: var(--err);
       border-radius: 8px; padding: 0 10px; cursor: pointer; font-size: 1rem; flex: 0 0 auto;
@@ -772,7 +774,9 @@
         if (del.error) throw del.error;
         if (!ingredients.length) return;
         const rows = ingredients.map((ing, i) => ({
-          supplement, ingredient: ing.ingredient, amount: ing.amount || null, sort_order: i,
+          supplement, ingredient: ing.ingredient,
+          amount_value: ing.amount_value, amount_unit: ing.amount_unit, amount_form: ing.amount_form,
+          sort_order: i,
         }));
         const ins = await supabase.from('supplement_ingredients').insert(rows);
         if (ins.error) throw ins.error;
@@ -1612,22 +1616,29 @@
       el.className = 'crs-msg' + (kind ? ' ' + kind : '');
     }
     // ---- ingredient rows (a tablet can contain multiple ingredients) ----
-    function addIngredientRow(ingredient = '', amount = '') {
+    function addIngredientRow(ingredient = '', amountValue = '', amountUnit = '', amountForm = '') {
       const row = document.createElement('div');
       row.className = 'ing-row';
       row.innerHTML = `
         <input type="text" class="ing-name" placeholder="Ingredient, e.g. Vitamin D3" value="${ingredient}" />
-        <input type="text" class="ing-amount" placeholder="Amount" value="${amount}" />
+        <input type="number" step="any" class="ing-amount" placeholder="Amt" value="${amountValue}" />
+        <input type="text" class="ing-unit" placeholder="Unit" value="${amountUnit}" />
+        <input type="text" class="ing-form" placeholder="Form, e.g. Zinc Citrate" value="${amountForm}" />
         <button type="button" class="ing-rm" title="Remove">✕</button>`;
       row.querySelector('.ing-rm').addEventListener('click', () => row.remove());
       $('sfIngredients').appendChild(row);
     }
     function collectIngredients() {
       return [...$('sfIngredients').querySelectorAll('.ing-row')]
-        .map(row => ({
-          ingredient: row.querySelector('.ing-name').value.trim(),
-          amount: row.querySelector('.ing-amount').value.trim(),
-        }))
+        .map(row => {
+          const rawAmount = row.querySelector('.ing-amount').value.trim();
+          return {
+            ingredient: row.querySelector('.ing-name').value.trim(),
+            amount_value: rawAmount === '' ? null : Number(rawAmount),
+            amount_unit: row.querySelector('.ing-unit').value.trim() || null,
+            amount_form: row.querySelector('.ing-form').value.trim() || null,
+          };
+        })
         .filter(i => i.ingredient);
     }
     $('sfIngAdd').addEventListener('click', () => addIngredientRow());
