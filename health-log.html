@@ -333,6 +333,13 @@
     }
     .log-add-row #logQty { flex: 0 0 90px; width: 90px; }
     .log-add-row #logAddBtn { flex: 0 0 auto; }
+    .food-row {
+      display: flex; justify-content: space-between; align-items: center;
+      gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border);
+    }
+    .food-row:last-child { border-bottom: none; }
+    .food-row label { flex: 1; font-size: 0.9rem; }
+    .food-row input { flex: 0 0 100px; width: 100px; }
   </style>
 </head>
 <body>
@@ -450,6 +457,24 @@
               </select>
             </div>
             <div id="bmiResult" class="fasting-val" style="margin-top:8px;">—</div>
+          </div>
+
+          <div class="field">
+            <div class="field-head"><span class="icon">🍎</span><span class="label">Food Log</span></div>
+            <div class="muted-note">Fill in whatever you had today. Saves with the topbar Save button.</div>
+            <div id="foodItemsList"></div>
+            <div class="crs-toolbar">
+              <button class="mini-btn ghost" id="foodAddToggle">＋ Add food item</button>
+            </div>
+            <div id="foodFormMsg" class="crs-msg"></div>
+            <div id="foodForm" class="crs-form hidden">
+              <label class="muted-note" for="fiName">Food item name</label>
+              <input type="text" id="fiName" placeholder="e.g. Banana" />
+              <div class="btn-row">
+                <button class="mini-btn" id="fiSave">Save</button>
+                <button class="mini-btn ghost" id="fiCancel">Cancel</button>
+              </div>
+            </div>
           </div>
 
           <div class="field">
@@ -719,6 +744,35 @@
         const { error } = await supabase.from('body_metrics').delete().eq('log_date', log_date);
         if (error) throw error;
       },
+      // ---- Food Log (manageable item list, float qty per day) ----
+      async activeFoodItems() {
+        const { data, error } = await supabase.from('food_items')
+          .select('name').eq('active', true).order('sort_order', { ascending: true }).order('name', { ascending: true });
+        if (error) throw error;
+        return data;
+      },
+      async foodItemAdd(name, sort_order) {
+        const { error } = await supabase.from('food_items').upsert({
+          name, active: true, sort_order: sort_order ?? 0,
+        }, { onConflict: 'name' });
+        if (error) throw error;
+      },
+      async foodLogForDate(log_date) {
+        const { data, error } = await supabase.from('food_log')
+          .select('food_item, quantity').eq('log_date', log_date);
+        if (error) throw error;
+        return data;
+      },
+      async foodLogSet(log_date, food_item, quantity) {
+        const { error } = await supabase.from('food_log').upsert({
+          log_date, food_item, quantity: quantity ?? null,
+        }, { onConflict: 'log_date,food_item' });
+        if (error) throw error;
+      },
+      async foodLogDelete(log_date, food_item) {
+        const { error } = await supabase.from('food_log').delete().eq('log_date', log_date).eq('food_item', food_item);
+        if (error) throw error;
+      },
     };
 
     // Supabase project ref — used for the "Open in Supabase" dashboard link.
@@ -923,6 +977,70 @@
       }
     }
 
+    // ================================================================
+    // Food Log — a manageable list of food items (like tablets), each with
+    // its own float qty input shown all at once (fill in whatever applies).
+    // ================================================================
+    let foodItems = [];      // [{ name }]
+    let loadedFood = {};     // food name -> qty as loaded (baseline), only entries with a value
+    function renderFoodItemsList() {
+      const el = $('foodItemsList');
+      if (!foodItems.length) {
+        el.innerHTML = '<div class="muted-note">No food items yet — click "+ Add food item" below.</div>';
+        return;
+      }
+      el.innerHTML = foodItems.map(item =>
+        `<div class="food-row"><label>${item.name}</label><input type="number" step="any" class="food-qty" data-food="${item.name}" placeholder="0" /></div>`
+      ).join('');
+      el.querySelectorAll('.food-qty').forEach(input => {
+        const loaded = loadedFood[input.dataset.food];
+        input.value = loaded != null ? loaded : '';
+        input.addEventListener('input', updateDirtyIndicator);
+      });
+    }
+    async function loadFoodLog(logDate) {
+      loadedFood = {};
+      if (!logDate) { renderFoodItemsList(); updateDirtyIndicator(); return; }
+      try {
+        if (!foodItems.length) foodItems = await DB.activeFoodItems();
+        const rows = await DB.foodLogForDate(logDate);
+        for (const r of rows) {
+          if (r.quantity != null) loadedFood[r.food_item] = r.quantity;
+        }
+        renderFoodItemsList();
+        updateDirtyIndicator();
+      } catch (e) {
+        $('foodItemsList').innerHTML = '<div class="muted-note">Could not load: ' + e.message + '</div>';
+      }
+    }
+    function foodFormMsg(text, kind) {
+      const el = $('foodFormMsg'); el.textContent = text || '';
+      el.className = 'crs-msg' + (kind ? ' ' + kind : '');
+    }
+    $('foodAddToggle').addEventListener('click', () => {
+      $('foodForm').classList.toggle('hidden');
+      if (!$('foodForm').classList.contains('hidden')) {
+        $('fiName').value = '';
+        foodFormMsg('', ''); $('fiName').focus();
+      }
+    });
+    $('fiCancel').addEventListener('click', () => $('foodForm').classList.add('hidden'));
+    $('fiSave').addEventListener('click', async () => {
+      const name = $('fiName').value.trim();
+      if (!name) { foodFormMsg('Name is required.', 'err'); return; }
+      $('fiSave').disabled = true;
+      foodFormMsg('Saving…', '');
+      try {
+        await DB.foodItemAdd(name, foodItems.length);
+        foodItems = await DB.activeFoodItems();
+        renderFoodItemsList();
+        $('foodForm').classList.add('hidden');
+        foodFormMsg('', '');
+      } catch (e) {
+        foodFormMsg('Save failed: ' + (e.message || ''), 'err');
+      } finally { $('fiSave').disabled = false; }
+    });
+
     const pad = n => String(n).padStart(2, '0');
     function todayDate() {        // current YYYY-MM-DD
       const d = new Date();
@@ -950,6 +1068,7 @@
       loadDay(value);
       loadSupplementLog(value);
       loadBodyMetrics(value);
+      loadFoodLog(value);
     }
 
     // In-app confirm dialog → resolves true (ok) / false (cancel).
@@ -1059,12 +1178,41 @@
         const bmiText = ` · BMI ${bmi.toFixed(1)} (${bmiCategory(bmi)})`;
         bmiRow = `<li><span>Weight / BMI</span><span class="when">${wDisp} / ${hDisp}${bmiText} <button class="edit-btn" data-edit-bmi title="Edit">✎</button> <button class="del-btn" data-del-bmi title="Delete">✕</button></span></li>`;
       }
-      el.innerHTML = fieldRows.join('') + suppRows.join('') + bmiRow;
+      const foodRows = Object.entries(loadedFood)
+        .filter(([, qty]) => qty != null)
+        .map(([name, qty]) =>
+          `<li><span>${name}</span><span class="when">${qty} <button class="edit-btn" data-edit-food="${name}" title="Edit">✎</button> <button class="del-btn" data-del-food="${name}" title="Delete">✕</button></span></li>`
+        );
+      el.innerHTML = fieldRows.join('') + suppRows.join('') + bmiRow + foodRows.join('');
       el.querySelectorAll('[data-edit-field]').forEach(btn => {
         btn.addEventListener('click', () => editTimeField(btn.dataset.editField));
       });
       el.querySelectorAll('[data-edit-supp]').forEach(btn => {
         btn.addEventListener('click', () => editSupplementEntry(btn.dataset.editSupp, btn.dataset.qty));
+      });
+      el.querySelectorAll('[data-edit-food]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const input = document.querySelector(`.food-qty[data-food="${CSS.escape(btn.dataset.editFood)}"]`);
+          if (input) { input.scrollIntoView({ behavior: 'smooth', block: 'center' }); input.focus(); }
+        });
+      });
+      el.querySelectorAll('[data-del-food]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const ok = await confirmModal('Delete this food entry? Cannot undo.', { title: 'Delete', okText: 'Delete' });
+          if (!ok) return;
+          const name = btn.dataset.delFood;
+          btn.disabled = true;
+          try {
+            await DB.foodLogDelete($('topbarLogDate').value, name);
+            delete loadedFood[name];
+            renderFoodItemsList();
+            renderSelectedDate();
+            updateDirtyIndicator();
+          } catch (e) {
+            msg($('saveMsg'), 'Delete failed: ' + e.message, 'err');
+            btn.disabled = false;
+          }
+        });
       });
       const editBmiBtn = el.querySelector('[data-edit-bmi]');
       if (editBmiBtn) editBmiBtn.addEventListener('click', () => {
@@ -1347,8 +1495,21 @@
       const bmiWeightKg = isNaN(weightRaw) ? null : round1(weightToKg(weightRaw, weightUnit));
       const bmiHeightCm = isNaN(heightRaw) ? null : round1(heightToCm(heightRaw, heightUnit));
       const bmiChanged = bmiWeightKg !== loadedWeightKg || bmiHeightCm !== loadedHeightCm;
-      const dirty = toSave.length > 0 || logChanged || bmiChanged;
-      return { filled, toSave, logToUpsert, logToClear, bmiWeightKg, bmiHeightCm, bmiChanged, dirty };
+      // Food Log: per-item diff against loadedFood (blank input = "not logged").
+      const foodToSet = [];
+      const foodToClear = [];
+      document.querySelectorAll('.food-qty').forEach(input => {
+        const name = input.dataset.food;
+        const raw = input.value.trim();
+        const qty = raw === '' ? null : parseFloat(raw);
+        const loaded = loadedFood[name] != null ? loadedFood[name] : null;
+        if (qty === loaded) return;
+        if (qty == null) foodToClear.push(name);
+        else foodToSet.push({ name, qty });
+      });
+      const foodChanged = foodToSet.length > 0 || foodToClear.length > 0;
+      const dirty = toSave.length > 0 || logChanged || bmiChanged || foodChanged;
+      return { filled, toSave, logToUpsert, logToClear, bmiWeightKg, bmiHeightCm, bmiChanged, foodToSet, foodToClear, foodChanged, dirty };
     }
     // Reflects unsaved changes on the topbar Save button (label + color).
     function updateDirtyIndicator() {
@@ -1365,12 +1526,12 @@
     $('saveBtn').addEventListener('click', async () => {
       const logDate = $('topbarLogDate').value;         // the log day (YYYY-MM-DD)
       if (!logDate) { msg($('saveMsg'), 'Pick the log date at top.', 'err'); return; }
-      const { filled, toSave, logToUpsert, logToClear, bmiWeightKg, bmiHeightCm, bmiChanged } = getPendingChanges();
+      const { filled, toSave, logToUpsert, logToClear, bmiWeightKg, bmiHeightCm, bmiChanged, foodToSet, foodToClear, foodChanged } = getPendingChanges();
 
-      if (!filled.length && !logToUpsert.length && !logToClear.length && !bmiChanged) {
+      if (!filled.length && !logToUpsert.length && !logToClear.length && !bmiChanged && !foodChanged) {
         msg($('saveMsg'), 'Fill at least one field or add a tablet to the log.', 'err'); return;
       }
-      if (!toSave.length && !logToUpsert.length && !logToClear.length && !bmiChanged) {
+      if (!toSave.length && !logToUpsert.length && !logToClear.length && !bmiChanged && !foodChanged) {
         msg($('saveMsg'), 'No changes to save.', ''); return;
       }
 
@@ -1423,7 +1584,17 @@
           loadedHeightCm = bmiHeightCm;
         }
 
-        const savedCount = plan.length + logToUpsert.length + logToClear.length + (bmiChanged ? 1 : 0);
+        for (const { name, qty } of foodToSet) {
+          await DB.foodLogSet(logDate, name, qty);
+          loadedFood[name] = qty;
+        }
+        for (const name of foodToClear) {
+          await DB.foodLogDelete(logDate, name);
+          delete loadedFood[name];
+        }
+
+        const savedCount = plan.length + logToUpsert.length + logToClear.length + (bmiChanged ? 1 : 0)
+          + foodToSet.length + foodToClear.length;
         msg($('saveMsg'), `Saved ${savedCount} entr${savedCount === 1 ? 'y' : 'ies'}.`, 'ok');
         FIELDS.forEach(f => { $(f.id).value = ''; });
         $('wakeupRedH').value = ''; $('wakeupRedM').value = '';
@@ -1432,6 +1603,7 @@
         await refreshSleepLast();
         await loadStats();
         lastDayRows = await DB.dayEvents(logDate).catch(() => []);
+        renderFoodItemsList();
         renderSelectedDate();
         updateDirtyIndicator();
       } catch (e) {
@@ -1498,6 +1670,7 @@
         await loadDay($('topbarLogDate').value);
         await loadSupplementLog($('topbarLogDate').value);
         await loadBodyMetrics($('topbarLogDate').value);
+        await loadFoodLog($('topbarLogDate').value);
         await loadStats();
         await refreshFasting();
         await refreshSleepLast();
@@ -1519,6 +1692,7 @@
       await loadDay($('topbarLogDate').value);
       await loadSupplementLog($('topbarLogDate').value);
       await loadBodyMetrics($('topbarLogDate').value);
+      await loadFoodLog($('topbarLogDate').value);
       await refreshFasting();
       await refreshSleepLast();
       await loadStats();
