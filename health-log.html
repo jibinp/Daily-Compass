@@ -235,6 +235,10 @@
       background: none; border: none; color: var(--err);
       cursor: pointer; font-size: 0.85rem; padding: 0 0 0 8px; line-height: 1;
     }
+    .list .edit-btn {
+      background: none; border: none; color: var(--accent);
+      cursor: pointer; font-size: 0.85rem; padding: 0 0 0 8px; line-height: 1;
+    }
     h2 { font-size: 1rem; margin: 24px 0 8px; }
     .overlay {
       position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6);
@@ -876,6 +880,23 @@
     // supplement log, both with delete (full event history lives on the
     // separate All Data page; this card is the day's data at a glance).
     let lastDayRows = [];   // last-fetched events for the selected date
+    // Scroll to + focus a time field so it's ready to edit (values are
+    // already pre-filled from loadDay — just change and hit Save).
+    function editTimeField(aspectId) {
+      const input = $(aspectId);
+      input.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      input.focus();
+    }
+    // Pre-fill the Supplement log dropdown+qty with an entry so it can be
+    // adjusted and re-added (re-adding the same tablet overwrites its qty).
+    function editSupplementEntry(name, qty) {
+      $('logTabletSelect').value = name;
+      updateLogTabletPreview();
+      $('logQty').value = qty;
+      $('logTabletSelect').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      $('logQty').focus();
+    }
+
     function renderSelectedDate() {
       const el = $('selectedDateList');
       const byAspect = Object.fromEntries(lastDayRows.map(r => [r.aspect, r]));
@@ -884,12 +905,18 @@
         if (!r) return `<li><span>${f.label}</span><span class="when">—</span></li>`;
         const z = r.tz || currentTz;
         const tag = z === currentTz ? '' : ` <span class="zone-tag">${shortZone(z)}</span>`;
-        return `<li><span>${f.label}</span><span class="when">${fmtWhen(r.datetime, z)}${tag} <button class="del-btn" data-del="${r.id}" title="Delete">✕</button></span></li>`;
+        return `<li><span>${f.label}</span><span class="when">${fmtWhen(r.datetime, z)}${tag} <button class="edit-btn" data-edit-field="${f.id}" title="Edit">✎</button> <button class="del-btn" data-del="${r.id}" title="Delete">✕</button></span></li>`;
       });
       const suppRows = [...originalLog.entries()].map(([name, qty]) =>
-        `<li><span>${name}</span><span class="when">×${qty} <button class="del-btn" data-del-supp="${name}" title="Delete">✕</button></span></li>`
+        `<li><span>${name}</span><span class="when">×${qty} <button class="edit-btn" data-edit-supp="${name}" data-qty="${qty}" title="Edit">✎</button> <button class="del-btn" data-del-supp="${name}" title="Delete">✕</button></span></li>`
       );
       el.innerHTML = fieldRows.join('') + suppRows.join('');
+      el.querySelectorAll('[data-edit-field]').forEach(btn => {
+        btn.addEventListener('click', () => editTimeField(btn.dataset.editField));
+      });
+      el.querySelectorAll('[data-edit-supp]').forEach(btn => {
+        btn.addEventListener('click', () => editSupplementEntry(btn.dataset.editSupp, btn.dataset.qty));
+      });
       el.querySelectorAll('[data-del]').forEach(btn => {
         btn.addEventListener('click', async () => {
           const ok = await confirmModal('Delete this entry? Cannot undo.', { title: 'Delete', okText: 'Delete' });
@@ -990,8 +1017,11 @@
         return;
       }
       el.innerHTML = entries.map(([name, qty]) =>
-        `<li><span>${name}</span><span class="when">×${qty} <button class="del-btn" data-remove="${name}" title="Remove">✕</button></span></li>`
+        `<li><span>${name}</span><span class="when">×${qty} <button class="edit-btn" data-edit="${name}" data-qty="${qty}" title="Edit">✎</button> <button class="del-btn" data-remove="${name}" title="Remove">✕</button></span></li>`
       ).join('');
+      el.querySelectorAll('[data-edit]').forEach(btn => {
+        btn.addEventListener('click', () => editSupplementEntry(btn.dataset.edit, btn.dataset.qty));
+      });
       el.querySelectorAll('[data-remove]').forEach(btn => {
         btn.addEventListener('click', () => {
           pendingLog.delete(btn.dataset.remove);
