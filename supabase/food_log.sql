@@ -18,10 +18,17 @@ create table if not exists food_log (
 alter table food_items enable row level security;
 alter table food_log enable row level security;
 
+drop policy if exists "food_items read"   on food_items;
+drop policy if exists "food_items insert" on food_items;
+drop policy if exists "food_items update" on food_items;
 create policy "food_items read"   on food_items for select to authenticated using (true);
 create policy "food_items insert" on food_items for insert to authenticated with check (true);
 create policy "food_items update" on food_items for update to authenticated using (true);
 
+drop policy if exists "food_log read"   on food_log;
+drop policy if exists "food_log insert" on food_log;
+drop policy if exists "food_log update" on food_log;
+drop policy if exists "food_log delete" on food_log;
 create policy "food_log read"   on food_log for select to authenticated using (true);
 create policy "food_log insert" on food_log for insert to authenticated with check (true);
 create policy "food_log update" on food_log for update to authenticated using (true);
