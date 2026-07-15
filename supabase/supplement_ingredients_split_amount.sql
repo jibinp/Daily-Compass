@@ -6,13 +6,6 @@ alter table supplement_ingredients add column if not exists amount_value numeric
 alter table supplement_ingredients add column if not exists amount_unit text;
 alter table supplement_ingredients add column if not exists amount_form text;
 
--- Generic parse for any rows not overridden below.
-update supplement_ingredients
-set amount_value = nullif((regexp_match(amount, '^\s*([\d.]+)'))[1], '')::numeric,
-    amount_unit  = (regexp_match(amount, '^\s*[\d.]+\s*([a-zA-Zµ%]+)'))[1],
-    amount_form  = (regexp_match(amount, '\(([^)]+)\)'))[1]
-where amount is not null;
-
 -- Hand-verified overrides for the 3 tablets entered earlier this session
 -- (raw amount text was inserted multiple times across naming iterations —
 -- delete-then-insert avoids any leftover duplicate ingredient rows).
