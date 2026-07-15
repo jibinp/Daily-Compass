@@ -340,6 +340,17 @@
     .food-row:last-child { border-bottom: none; }
     .food-row label { flex: 1; font-size: 0.9rem; }
     .food-row input { flex: 0 0 100px; width: 100px; }
+    .macro-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 8px; }
+    .macro-grid label { display: block; margin-bottom: 4px; }
+    @media (max-width: 400px) { .macro-grid { grid-template-columns: 1fr; } }
+    .macro-compare { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+    .macro-row {
+      display: flex; justify-content: space-between; font-size: 0.88rem;
+      background: var(--field); border: 1px solid var(--border);
+      border-radius: 8px; padding: 8px 10px;
+    }
+    .macro-row.ok { border-color: var(--ok); }
+    .macro-row.over { border-color: var(--err); color: var(--err); }
   </style>
 </head>
 <body>
@@ -473,6 +484,46 @@
               <div class="btn-row">
                 <button class="mini-btn" id="fiSave">Save</button>
                 <button class="mini-btn ghost" id="fiCancel">Cancel</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="field">
+            <div class="field-head"><span class="icon">🍽️</span><span class="label">Meal Log</span></div>
+            <div class="muted-note">One entry per day. Saves with the topbar Save button.</div>
+
+            <div class="macro-grid">
+              <div><label class="muted-note" for="mealCalories">Calories</label><input type="number" step="any" id="mealCalories" placeholder="0" /></div>
+              <div><label class="muted-note" for="mealProtein">Protein (g)</label><input type="number" step="any" id="mealProtein" placeholder="0" /></div>
+              <div><label class="muted-note" for="mealFat">Fat (g)</label><input type="number" step="any" id="mealFat" placeholder="0" /></div>
+              <div><label class="muted-note" for="mealFiber">Fiber (g)</label><input type="number" step="any" id="mealFiber" placeholder="0" /></div>
+              <div><label class="muted-note" for="mealCarbs">Carbs (g)</label><input type="number" step="any" id="mealCarbs" placeholder="0" /></div>
+            </div>
+            <label class="muted-note" for="mealEaten">What eaten</label>
+            <textarea id="mealEaten" rows="2" placeholder="e.g. Rice, dal, salad"></textarea>
+            <label class="muted-note" for="mealRemarks">Remarks</label>
+            <textarea id="mealRemarks" rows="2" placeholder="Optional"></textarea>
+
+            <div id="mealCompare" class="macro-compare"></div>
+
+            <div class="crs-toolbar">
+              <button class="mini-btn ghost" id="targetsToggle">＋ Update targets</button>
+            </div>
+            <div id="targetsFormMsg" class="crs-msg"></div>
+            <div id="targetsForm" class="crs-form hidden">
+              <label class="muted-note" for="tgCalorieLimit">Calorie limit</label>
+              <input type="number" step="any" id="tgCalorieLimit" placeholder="e.g. 2000" />
+              <label class="muted-note" for="tgProteinMin">Protein min (g)</label>
+              <input type="number" step="any" id="tgProteinMin" placeholder="e.g. 100" />
+              <label class="muted-note" for="tgFatLimit">Fat limit (g)</label>
+              <input type="number" step="any" id="tgFatLimit" placeholder="e.g. 70" />
+              <label class="muted-note" for="tgCarbLimit">Carb limit (g)</label>
+              <input type="number" step="any" id="tgCarbLimit" placeholder="e.g. 200" />
+              <label class="muted-note" for="tgFiberMin">Fiber min (g)</label>
+              <input type="number" step="any" id="tgFiberMin" placeholder="e.g. 25" />
+              <div class="btn-row">
+                <button class="mini-btn" id="tgSave">Save</button>
+                <button class="mini-btn ghost" id="tgCancel">Cancel</button>
               </div>
             </div>
           </div>
@@ -773,6 +824,33 @@
         const { error } = await supabase.from('food_log').delete().eq('log_date', log_date).eq('food_item', food_item);
         if (error) throw error;
       },
+      // ---- Meal Log + nutrition targets (targets versioned by effective_date) ----
+      async mealLogForDate(log_date) {
+        const { data, error } = await supabase.from('meal_log')
+          .select('calories, protein, fat, fiber, carbs, eaten, remarks').eq('log_date', log_date).maybeSingle();
+        if (error) throw error;
+        return data;
+      },
+      async mealLogSet(log_date, fields) {
+        const { error } = await supabase.from('meal_log').upsert({ log_date, ...fields }, { onConflict: 'log_date' });
+        if (error) throw error;
+      },
+      async mealLogDelete(log_date) {
+        const { error } = await supabase.from('meal_log').delete().eq('log_date', log_date);
+        if (error) throw error;
+      },
+      // latest targets row with effective_date <= log_date (targets rarely change)
+      async targetsForDate(log_date) {
+        const { data, error } = await supabase.from('nutrition_targets')
+          .select('calorie_limit, protein_min, fat_limit, carb_limit, fiber_min, effective_date')
+          .lte('effective_date', log_date).order('effective_date', { ascending: false }).limit(1);
+        if (error) throw error;
+        return data.length ? data[0] : null;
+      },
+      async targetsAdd(effective_date, fields) {
+        const { error } = await supabase.from('nutrition_targets').upsert({ effective_date, ...fields }, { onConflict: 'effective_date' });
+        if (error) throw error;
+      },
     };
 
     // Supabase project ref — used for the "Open in Supabase" dashboard link.
@@ -1041,6 +1119,110 @@
       } finally { $('fiSave').disabled = false; }
     });
 
+    // ================================================================
+    // Meal Log — one freeform macro entry per day, compared against the
+    // nutrition targets currently in effect (versioned by effective_date;
+    // targets change occasionally, not daily — use the latest applicable one).
+    // ================================================================
+    const MEAL_FIELDS = ['calories', 'protein', 'fat', 'fiber', 'carbs'];
+    const capitalize = s => s[0].toUpperCase() + s.slice(1);
+    let loadedMeal = {};       // { calories, protein, fat, fiber, carbs, eaten, remarks } as loaded, or {}
+    let currentTargets = null; // targets row applicable to the selected date, or null
+
+    function mealInputs() {
+      return {
+        calories: $('mealCalories').value,
+        protein: $('mealProtein').value,
+        fat: $('mealFat').value,
+        fiber: $('mealFiber').value,
+        carbs: $('mealCarbs').value,
+        eaten: $('mealEaten').value.trim(),
+        remarks: $('mealRemarks').value.trim(),
+      };
+    }
+    function renderMealCompare() {
+      const el = $('mealCompare');
+      if (!currentTargets) { el.innerHTML = '<div class="muted-note">No nutrition targets set yet.</div>'; return; }
+      const vals = mealInputs();
+      const rows = [
+        { label: 'Calories', val: parseFloat(vals.calories), target: currentTargets.calorie_limit, kind: 'limit' },
+        { label: 'Protein',  val: parseFloat(vals.protein),  target: currentTargets.protein_min,   kind: 'min' },
+        { label: 'Fat',      val: parseFloat(vals.fat),      target: currentTargets.fat_limit,     kind: 'limit' },
+        { label: 'Carbs',    val: parseFloat(vals.carbs),    target: currentTargets.carb_limit,    kind: 'limit' },
+        { label: 'Fiber',    val: parseFloat(vals.fiber),    target: currentTargets.fiber_min,     kind: 'min' },
+      ];
+      el.innerHTML = rows.filter(r => r.target != null).map(r => {
+        const v = isNaN(r.val) ? 0 : r.val;
+        const diff = v - r.target;
+        const pct = r.target ? Math.round(v / r.target * 100) : 0;
+        const good = r.kind === 'limit' ? v <= r.target : v >= r.target;
+        const diffText = diff > 0 ? `+${round1(diff)}` : `${round1(diff)}`;
+        return `<div class="macro-row ${good ? 'ok' : 'over'}"><span>${r.label}</span><span>${round1(v)}/${r.target} (${pct}%, ${diffText})</span></div>`;
+      }).join('');
+    }
+    MEAL_FIELDS.forEach(f => $('meal' + capitalize(f)).addEventListener('input', () => { renderMealCompare(); updateDirtyIndicator(); }));
+    $('mealEaten').addEventListener('input', updateDirtyIndicator);
+    $('mealRemarks').addEventListener('input', updateDirtyIndicator);
+
+    async function loadMealLog(logDate) {
+      MEAL_FIELDS.forEach(f => { $('meal' + capitalize(f)).value = ''; });
+      $('mealEaten').value = ''; $('mealRemarks').value = '';
+      loadedMeal = {};
+      currentTargets = null;
+      if (!logDate) { renderMealCompare(); updateDirtyIndicator(); return; }
+      try {
+        const [row, targets] = await Promise.all([DB.mealLogForDate(logDate), DB.targetsForDate(logDate)]);
+        currentTargets = targets;
+        if (row) {
+          loadedMeal = row;
+          MEAL_FIELDS.forEach(f => { if (row[f] != null) $('meal' + capitalize(f)).value = row[f]; });
+          $('mealEaten').value = row.eaten || '';
+          $('mealRemarks').value = row.remarks || '';
+        }
+        renderMealCompare();
+        updateDirtyIndicator();
+      } catch (e) {
+        msg($('saveMsg'), 'Could not load meal log: ' + e.message, 'err');
+      }
+    }
+
+    function targetsFormMsg(text, kind) {
+      const el = $('targetsFormMsg'); el.textContent = text || '';
+      el.className = 'crs-msg' + (kind ? ' ' + kind : '');
+    }
+    $('targetsToggle').addEventListener('click', () => {
+      $('targetsForm').classList.toggle('hidden');
+      if (!$('targetsForm').classList.contains('hidden')) {
+        $('tgCalorieLimit').value = currentTargets && currentTargets.calorie_limit != null ? currentTargets.calorie_limit : '';
+        $('tgProteinMin').value = currentTargets && currentTargets.protein_min != null ? currentTargets.protein_min : '';
+        $('tgFatLimit').value = currentTargets && currentTargets.fat_limit != null ? currentTargets.fat_limit : '';
+        $('tgCarbLimit').value = currentTargets && currentTargets.carb_limit != null ? currentTargets.carb_limit : '';
+        $('tgFiberMin').value = currentTargets && currentTargets.fiber_min != null ? currentTargets.fiber_min : '';
+        targetsFormMsg('', '');
+      }
+    });
+    $('tgCancel').addEventListener('click', () => $('targetsForm').classList.add('hidden'));
+    $('tgSave').addEventListener('click', async () => {
+      $('tgSave').disabled = true;
+      targetsFormMsg('Saving…', '');
+      try {
+        const fields = {
+          calorie_limit: $('tgCalorieLimit').value ? parseFloat($('tgCalorieLimit').value) : null,
+          protein_min: $('tgProteinMin').value ? parseFloat($('tgProteinMin').value) : null,
+          fat_limit: $('tgFatLimit').value ? parseFloat($('tgFatLimit').value) : null,
+          carb_limit: $('tgCarbLimit').value ? parseFloat($('tgCarbLimit').value) : null,
+          fiber_min: $('tgFiberMin').value ? parseFloat($('tgFiberMin').value) : null,
+        };
+        await DB.targetsAdd(todayDate(), fields);
+        currentTargets = await DB.targetsForDate($('topbarLogDate').value);
+        renderMealCompare();
+        $('targetsForm').classList.add('hidden');
+        targetsFormMsg('', '');
+      } catch (e) {
+        targetsFormMsg('Save failed: ' + (e.message || ''), 'err');
+      } finally { $('tgSave').disabled = false; }
+    });
+
     const pad = n => String(n).padStart(2, '0');
     function todayDate() {        // current YYYY-MM-DD
       const d = new Date();
@@ -1069,6 +1251,7 @@
       loadSupplementLog(value);
       loadBodyMetrics(value);
       loadFoodLog(value);
+      loadMealLog(value);
     }
 
     // In-app confirm dialog → resolves true (ok) / false (cancel).
@@ -1183,7 +1366,14 @@
         .map(([name, qty]) =>
           `<li><span>${name}</span><span class="when">${qty} <button class="edit-btn" data-edit-food="${name}" title="Edit">✎</button> <button class="del-btn" data-del-food="${name}" title="Delete">✕</button></span></li>`
         );
-      el.innerHTML = fieldRows.join('') + suppRows.join('') + bmiRow + foodRows.join('');
+      let mealRow = '';
+      const hasMeal = MEAL_FIELDS.some(f => loadedMeal[f] != null) || loadedMeal.eaten || loadedMeal.remarks;
+      if (hasMeal) {
+        const parts = MEAL_FIELDS.filter(f => loadedMeal[f] != null).map(f => `${capitalize(f)} ${loadedMeal[f]}`).join(', ');
+        const eatenText = loadedMeal.eaten ? ` — ${loadedMeal.eaten}` : '';
+        mealRow = `<li><span>Meal</span><span class="when">${parts}${eatenText} <button class="edit-btn" data-edit-meal title="Edit">✎</button> <button class="del-btn" data-del-meal title="Delete">✕</button></span></li>`;
+      }
+      el.innerHTML = fieldRows.join('') + suppRows.join('') + bmiRow + foodRows.join('') + mealRow;
       el.querySelectorAll('[data-edit-field]').forEach(btn => {
         btn.addEventListener('click', () => editTimeField(btn.dataset.editField));
       });
@@ -1231,6 +1421,25 @@
         } catch (e) {
           msg($('saveMsg'), 'Delete failed: ' + e.message, 'err');
           delBmiBtn.disabled = false;
+        }
+      });
+      const editMealBtn = el.querySelector('[data-edit-meal]');
+      if (editMealBtn) editMealBtn.addEventListener('click', () => {
+        $('mealCalories').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        $('mealCalories').focus();
+      });
+      const delMealBtn = el.querySelector('[data-del-meal]');
+      if (delMealBtn) delMealBtn.addEventListener('click', async () => {
+        const ok = await confirmModal('Delete meal log for this date? Cannot undo.', { title: 'Delete', okText: 'Delete' });
+        if (!ok) return;
+        delMealBtn.disabled = true;
+        try {
+          await DB.mealLogDelete($('topbarLogDate').value);
+          await loadMealLog($('topbarLogDate').value);
+          renderSelectedDate();
+        } catch (e) {
+          msg($('saveMsg'), 'Delete failed: ' + e.message, 'err');
+          delMealBtn.disabled = false;
         }
       });
       el.querySelectorAll('[data-del]').forEach(btn => {
@@ -1508,8 +1717,17 @@
         else foodToSet.push({ name, qty });
       });
       const foodChanged = foodToSet.length > 0 || foodToClear.length > 0;
-      const dirty = toSave.length > 0 || logChanged || bmiChanged || foodChanged;
-      return { filled, toSave, logToUpsert, logToClear, bmiWeightKg, bmiHeightCm, bmiChanged, foodToSet, foodToClear, foodChanged, dirty };
+      // Meal Log: one row per date, diffed as a whole against loadedMeal.
+      const mealVals = mealInputs();
+      const mealFields = {};
+      MEAL_FIELDS.forEach(f => { mealFields[f] = mealVals[f] === '' ? null : parseFloat(mealVals[f]); });
+      mealFields.eaten = mealVals.eaten || null;
+      mealFields.remarks = mealVals.remarks || null;
+      const mealChanged = MEAL_FIELDS.concat(['eaten', 'remarks']).some(
+        f => (mealFields[f] ?? null) !== (loadedMeal[f] ?? null)
+      );
+      const dirty = toSave.length > 0 || logChanged || bmiChanged || foodChanged || mealChanged;
+      return { filled, toSave, logToUpsert, logToClear, bmiWeightKg, bmiHeightCm, bmiChanged, foodToSet, foodToClear, foodChanged, mealFields, mealChanged, dirty };
     }
     // Reflects unsaved changes on the topbar Save button (label + color).
     function updateDirtyIndicator() {
@@ -1526,12 +1744,12 @@
     $('saveBtn').addEventListener('click', async () => {
       const logDate = $('topbarLogDate').value;         // the log day (YYYY-MM-DD)
       if (!logDate) { msg($('saveMsg'), 'Pick the log date at top.', 'err'); return; }
-      const { filled, toSave, logToUpsert, logToClear, bmiWeightKg, bmiHeightCm, bmiChanged, foodToSet, foodToClear, foodChanged } = getPendingChanges();
+      const { filled, toSave, logToUpsert, logToClear, bmiWeightKg, bmiHeightCm, bmiChanged, foodToSet, foodToClear, foodChanged, mealFields, mealChanged } = getPendingChanges();
 
-      if (!filled.length && !logToUpsert.length && !logToClear.length && !bmiChanged && !foodChanged) {
+      if (!filled.length && !logToUpsert.length && !logToClear.length && !bmiChanged && !foodChanged && !mealChanged) {
         msg($('saveMsg'), 'Fill at least one field or add a tablet to the log.', 'err'); return;
       }
-      if (!toSave.length && !logToUpsert.length && !logToClear.length && !bmiChanged && !foodChanged) {
+      if (!toSave.length && !logToUpsert.length && !logToClear.length && !bmiChanged && !foodChanged && !mealChanged) {
         msg($('saveMsg'), 'No changes to save.', ''); return;
       }
 
@@ -1593,8 +1811,19 @@
           delete loadedFood[name];
         }
 
+        if (mealChanged) {
+          const hasAnyMealValue = MEAL_FIELDS.some(f => mealFields[f] != null) || mealFields.eaten || mealFields.remarks;
+          if (!hasAnyMealValue) {
+            await DB.mealLogDelete(logDate);
+            loadedMeal = {};
+          } else {
+            await DB.mealLogSet(logDate, mealFields);
+            loadedMeal = mealFields;
+          }
+        }
+
         const savedCount = plan.length + logToUpsert.length + logToClear.length + (bmiChanged ? 1 : 0)
-          + foodToSet.length + foodToClear.length;
+          + foodToSet.length + foodToClear.length + (mealChanged ? 1 : 0);
         msg($('saveMsg'), `Saved ${savedCount} entr${savedCount === 1 ? 'y' : 'ies'}.`, 'ok');
         FIELDS.forEach(f => { $(f.id).value = ''; });
         $('wakeupRedH').value = ''; $('wakeupRedM').value = '';
@@ -1604,6 +1833,7 @@
         await loadStats();
         lastDayRows = await DB.dayEvents(logDate).catch(() => []);
         renderFoodItemsList();
+        renderMealCompare();
         renderSelectedDate();
         updateDirtyIndicator();
       } catch (e) {
@@ -1671,6 +1901,7 @@
         await loadSupplementLog($('topbarLogDate').value);
         await loadBodyMetrics($('topbarLogDate').value);
         await loadFoodLog($('topbarLogDate').value);
+        await loadMealLog($('topbarLogDate').value);
         await loadStats();
         await refreshFasting();
         await refreshSleepLast();
@@ -1693,6 +1924,7 @@
       await loadSupplementLog($('topbarLogDate').value);
       await loadBodyMetrics($('topbarLogDate').value);
       await loadFoodLog($('topbarLogDate').value);
+      await loadMealLog($('topbarLogDate').value);
       await refreshFasting();
       await refreshSleepLast();
       await loadStats();
