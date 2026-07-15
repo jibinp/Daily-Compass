@@ -206,7 +206,11 @@
     .topbar-title { font-weight: 700; font-size: 1rem; color: var(--text); }
     .topbar-left { display: flex; align-items: center; gap: 10px; }
     .topbar-actions { display: flex; align-items: center; gap: 14px; }
-    .topbar-date { font-size: 0.8rem; color: var(--muted); white-space: nowrap; }
+    .topbar-date-input {
+      width: auto; flex: 0 0 auto;
+      padding: 6px 8px; font-size: 0.82rem;
+    }
+    .topbar-today-btn { padding: 6px 10px; font-size: 0.78rem; }
     @media (max-width: 480px) {
       .topbar { flex-wrap: wrap; row-gap: 8px; }
       .topbar-actions { width: 100%; justify-content: flex-end; }
@@ -361,7 +365,8 @@
       <span class="topbar-title">📅 Data Entry</span>
     </div>
     <div class="topbar-actions">
-      <span class="topbar-date" id="topbarDate"></span>
+      <input type="date" id="topbarLogDate" class="topbar-date-input" aria-label="Log date" />
+      <button class="now-btn topbar-today-btn" id="topbarTodayBtn">Today</button>
       <button class="mini-btn" id="saveBtn">Save</button>
       <a class="link-btn" id="supabaseLink" target="_blank" rel="noopener">OpenDB</a>
       <button class="link-btn" id="logoutBtn">Log out</button>
@@ -808,12 +813,13 @@
       el.className = 'msg' + (kind ? ' ' + kind : '');
     }
 
-    // Selected log date, shown in the topbar next to Save.
-    function updateTopbarDate() {
-      const v = $('logDate').value;
-      $('topbarDate').textContent = v
-        ? new Date(`${v}T00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
-        : '';
+    // Switch the selected log date — keeps the form's Log date field and the
+    // topbar date input in sync, wherever the change came from.
+    function goToDate(value) {
+      $('logDate').value = value;
+      $('topbarLogDate').value = value;
+      loadDay(value);
+      loadSupplementChecklist(value);
     }
 
     // In-app confirm dialog → resolves true (ok) / false (cancel).
@@ -1057,13 +1063,10 @@
       } finally { $('sfSave').disabled = false; }
     });
 
-    $('logDate').addEventListener('change', () => { loadDay($('logDate').value); loadSupplementChecklist($('logDate').value); updateTopbarDate(); });
-    $('todayBtn').addEventListener('click', () => {
-      $('logDate').value = todayDate();
-      loadDay(todayDate());
-      loadSupplementChecklist(todayDate());
-      updateTopbarDate();
-    });
+    $('logDate').addEventListener('change', () => goToDate($('logDate').value));
+    $('topbarLogDate').addEventListener('change', () => goToDate($('topbarLogDate').value));
+    $('todayBtn').addEventListener('click', () => goToDate(todayDate()));
+    $('topbarTodayBtn').addEventListener('click', () => goToDate(todayDate()));
 
     $('logoutBtn').addEventListener('click', async () => {
       await DB.signOut();
@@ -1217,7 +1220,7 @@
       $('appView').classList.remove('hidden');
       if (!$('logDate').value) $('logDate').value = todayDate();
       if (!$('recvDate').value) $('recvDate').value = todayDate();
-      updateTopbarDate();
+      $('topbarLogDate').value = $('logDate').value;
       await loadDay($('logDate').value);
       await loadSupplementChecklist($('logDate').value);
       await refreshFasting();
