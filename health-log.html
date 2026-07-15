@@ -211,6 +211,9 @@
       padding: 6px 8px; font-size: 0.82rem;
     }
     .topbar-today-btn { padding: 6px 10px; font-size: 0.78rem; }
+    .topbar-msg { font-size: 0.78rem; white-space: nowrap; min-width: 0; }
+    .topbar-msg.ok { color: var(--ok); }
+    .topbar-msg.err { color: var(--err); }
     @media (max-width: 480px) {
       .topbar { flex-wrap: wrap; row-gap: 8px; }
       .topbar-actions { width: 100%; justify-content: flex-end; }
@@ -352,6 +355,7 @@
       <input type="date" id="topbarLogDate" class="topbar-date-input" aria-label="Log date" />
       <button class="now-btn topbar-today-btn" id="topbarTodayBtn">Today</button>
       <button class="mini-btn" id="saveBtn">Save</button>
+      <span class="topbar-msg" id="topbarMsg"></span>
       <a class="link-btn" id="supabaseLink" target="_blank" rel="noopener">OpenDB</a>
       <button class="link-btn" id="logoutBtn">Log out</button>
     </div>
@@ -778,6 +782,13 @@
     function msg(el, text, kind) {
       el.textContent = text;
       el.className = 'msg' + (kind ? ' ' + kind : '');
+      // saveMsg sits below the fold once the page is scrolled — mirror it into
+      // the sticky topbar so Save/Refresh feedback is visible without scrolling up.
+      if (el.id === 'saveMsg') {
+        const tb = $('topbarMsg');
+        tb.textContent = text;
+        tb.className = 'topbar-msg' + (kind ? ' ' + kind : '');
+      }
     }
 
     // Switch the selected log date (topbar date input is the only picker now).
