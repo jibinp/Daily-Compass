@@ -32,6 +32,6 @@ insert into supplement_ingredients (supplement, ingredient, amount_value, amount
 ('Pure Nutrition Iron (Folic acid, Vitamin C & Zinc)', 'Folic Acid', 176, 'mcg', null, 5),
 ('Health Veda Zinc Citrate', 'Zinc', 13.2, 'mg', 'Zinc Citrate 44 mg', 0),
 ('Carbamide Forte Vitamin D3 + K2', 'Vitamin K2', 55, 'mcg', 'MK-7 Menaquinone-7', 0),
-('Carbamide Forte Vitamin D3 + K2', 'Vitamin D3', 15, 'mcg', 'Cholecalciferol, from Lichen (600 IU)', 1);
+('Carbamide Forte Vitamin D3 + K2', 'Vitamin D3', 600, 'IU', 'Cholecalciferol, from Lichen (15 mcg)', 1);
 
 alter table supplement_ingredients drop column if exists amount;
