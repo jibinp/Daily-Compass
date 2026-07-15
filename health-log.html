@@ -1051,15 +1051,12 @@
         `<li><span>${name}</span><span class="when">×${qty} <button class="edit-btn" data-edit-supp="${name}" data-qty="${qty}" title="Edit">✎</button> <button class="del-btn" data-del-supp="${name}" title="Delete">✕</button></span></li>`
       );
       let bmiRow = '';
-      if (loadedWeightKg != null || loadedHeightCm != null) {
-        const wDisp = loadedWeightKg != null ? `${round1(weightFromKg(loadedWeightKg, weightUnit))} ${weightUnit}` : '—';
-        const hDisp = loadedHeightCm != null ? `${round1(heightFromCm(loadedHeightCm, heightUnit))} ${heightUnit}` : '—';
-        let bmiText = '';
-        if (loadedWeightKg != null && loadedHeightCm != null) {
-          const m = loadedHeightCm / 100;
-          const bmi = loadedWeightKg / (m * m);
-          bmiText = ` · BMI ${bmi.toFixed(1)} (${bmiCategory(bmi)})`;
-        }
+      if (loadedWeightKg != null && loadedHeightCm != null) {
+        const wDisp = `${round1(weightFromKg(loadedWeightKg, weightUnit))} ${weightUnit}`;
+        const hDisp = `${round1(heightFromCm(loadedHeightCm, heightUnit))} ${heightUnit}`;
+        const m = loadedHeightCm / 100;
+        const bmi = loadedWeightKg / (m * m);
+        const bmiText = ` · BMI ${bmi.toFixed(1)} (${bmiCategory(bmi)})`;
         bmiRow = `<li><span>Weight / BMI</span><span class="when">${wDisp} / ${hDisp}${bmiText} <button class="edit-btn" data-edit-bmi title="Edit">✎</button> <button class="del-btn" data-del-bmi title="Delete">✕</button></span></li>`;
       }
       el.innerHTML = fieldRows.join('') + suppRows.join('') + bmiRow;
