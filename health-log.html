@@ -73,6 +73,13 @@
       color-scheme: dark;
     }
     input:focus { outline: none; border-color: var(--accent); }
+    textarea {
+      display: block; width: 100%; margin-bottom: 8px;
+      background: var(--field); border: 1px solid var(--border);
+      color: var(--text); border-radius: 8px; padding: 9px 10px;
+      font-size: 0.88rem; color-scheme: dark; font-family: inherit; resize: vertical;
+    }
+    textarea:focus { outline: none; border-color: var(--accent); }
     .reduction-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
     .reduction-row input {
       width: 44px; background: var(--field); border: 1px solid var(--border);
