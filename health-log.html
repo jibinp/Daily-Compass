@@ -313,6 +313,13 @@
       width: 56px; height: 56px; border-radius: 50%; object-fit: cover;
       border: 1px solid var(--border); margin-top: 6px; display: block;
     }
+    .log-add-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+    .tablet-thumb-lg {
+      width: 84px; height: 84px; border-radius: 12px; object-fit: contain;
+      background: var(--field); border: 1px solid var(--border); flex: 0 0 auto;
+    }
+    .log-add-row #logQty { flex: 0 0 90px; width: 90px; }
+    .log-add-row #logAddBtn { flex: 0 0 auto; }
   </style>
 </head>
 <body>
@@ -423,9 +430,9 @@
             <div class="muted-note">Pick a tablet, set qty, tap Add. Saves with the topbar Save button — uses the date selected there.</div>
 
             <select class="tz-select-sm" id="logTabletSelect" aria-label="Select tablet"></select>
-            <img id="logTabletPreview" class="tablet-thumb hidden" alt="" />
-            <div class="row" style="margin-top:6px;">
-              <input type="number" id="logQty" placeholder="Qty" min="1" style="max-width:80px;" />
+            <div class="log-add-row">
+              <img id="logTabletPreview" class="tablet-thumb-lg hidden" alt="" />
+              <input type="number" id="logQty" placeholder="Qty" min="1" />
               <button class="mini-btn" id="logAddBtn" type="button">＋ Add</button>
             </div>
             <div id="logMsg" class="crs-msg"></div>
