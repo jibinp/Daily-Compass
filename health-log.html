@@ -917,8 +917,7 @@
           }
         }
         renderSelectedDate(rows);
-        msg($('saveMsg'), rows.length ? `Loaded ${logDate}.` : `Nothing logged for ${logDate} yet.`,
-          rows.length ? 'ok' : '');
+        msg($('saveMsg'), rows.length ? `Loaded ${logDate}.` : '', 'ok');
       } catch (e) {
         msg($('saveMsg'), 'Could not load day: ' + e.message, 'err');
       }
