@@ -227,6 +227,10 @@
     }
     .list li:last-child { border-bottom: none; }
     .list .when { color: var(--muted); }
+    .list .del-btn {
+      background: none; border: none; color: var(--err);
+      cursor: pointer; font-size: 0.85rem; padding: 0 0 0 8px; line-height: 1;
+    }
     h2 { font-size: 1rem; margin: 24px 0 8px; }
     .overlay {
       position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6);
@@ -274,18 +278,6 @@
     .stat-val { font-size: 1.15rem; font-weight: 700; color: var(--accent); }
     .stat-lbl { font-size: 0.7rem; color: var(--muted); margin-top: 4px; }
     .data-head { display: flex; align-items: center; justify-content: space-between; }
-    /* ---- supplement checklist (data entry) ---- */
-    .checklist { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
-    .check-row {
-      display: flex; align-items: center; gap: 12px;
-      background: var(--field); border: 1px solid var(--border);
-      border-radius: 10px; padding: 10px 12px; cursor: pointer;
-    }
-    .check-row input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--accent); cursor: pointer; }
-    .check-row .cr-name { font-weight: 600; }
-    .check-row .cr-dose { color: var(--muted); font-size: 0.82rem; margin-left: 6px; }
-    .check-row.taken { border-color: var(--ok); }
-    .empty-note { color: var(--muted); font-size: 0.85rem; padding: 8px 0; }
     .crs-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0 8px; }
     .mini-btn {
       background: var(--accent); color: #04283a; border: none;
@@ -316,14 +308,6 @@
     .tablet-thumb {
       width: 56px; height: 56px; border-radius: 50%; object-fit: cover;
       border: 1px solid var(--border); margin-top: 6px; display: block;
-    }
-    .tablet-thumb-sm {
-      width: 28px; height: 28px; border-radius: 50%; object-fit: cover;
-      border: 1px solid var(--border); flex: 0 0 auto;
-    }
-    .tablet-thumb-sm.placeholder {
-      display: inline-flex; align-items: center; justify-content: center;
-      background: var(--field); font-size: 0.85rem;
     }
   </style>
 </head>
@@ -430,11 +414,20 @@
           </div>
 
           <div class="field">
-            <div class="field-head"><span class="icon">💊</span><span class="label">Tablet updater</span></div>
+            <div class="field-head"><span class="icon">💊</span><span class="label">Supplement log</span></div>
+            <div class="muted-note">Pick a tablet, set qty, tap Add. Saves with the topbar Save button — uses the date selected there.</div>
+
+            <select class="tz-select-sm" id="logTabletSelect" aria-label="Select tablet"></select>
+            <img id="logTabletPreview" class="tablet-thumb hidden" alt="" />
+            <div class="row" style="margin-top:6px;">
+              <input type="number" id="logQty" placeholder="Qty" min="1" style="max-width:80px;" />
+              <button class="mini-btn" id="logAddBtn" type="button">＋ Add</button>
+            </div>
+            <div id="logMsg" class="crs-msg"></div>
+            <ul class="list" id="logPendingList"></ul>
 
             <div class="crs-toolbar">
               <button class="mini-btn ghost" id="suppAddToggle">＋ Add tablet</button>
-              <a class="mini-btn ghost" href="supplement-tracker.html">Tablet Ingredient Updater →</a>
             </div>
             <div id="suppFormMsg" class="crs-msg"></div>
             <div id="suppForm" class="crs-form hidden">
@@ -453,19 +446,6 @@
                 <button class="mini-btn ghost" id="sfCancel">Cancel</button>
               </div>
             </div>
-
-            <div class="checklist" id="suppChecklist"></div>
-          </div>
-
-          <div class="field">
-            <div class="field-head"><span class="icon">📦</span><span class="label">Tablet received</span></div>
-            <div class="muted-note">Log when a new bottle/pack of a tablet arrives. Uses the date selected in the topbar.</div>
-            <select class="tz-select-sm" id="recvTablet" aria-label="Tablet received"></select>
-            <div class="row" style="margin-top:6px;">
-              <input type="number" id="recvQty" placeholder="Qty" min="1" style="max-width:80px;" />
-              <button class="now-btn" id="recvSave">Save</button>
-            </div>
-            <div class="msg" id="recvMsg"></div>
           </div>
         </section>
 
@@ -644,13 +624,13 @@
       },
       async supplementLogForDate(log_date) {
         const { data, error } = await supabase.from('supplement_log')
-          .select('supplement, taken').eq('log_date', log_date);
+          .select('supplement, taken, quantity').eq('log_date', log_date);
         if (error) throw error;
         return data;
       },
-      async supplementLogSet(log_date, supplement, taken) {
+      async supplementLogSet(log_date, supplement, taken, quantity) {
         const { error } = await supabase.from('supplement_log').upsert({
-          log_date, supplement, taken, taken_at: new Date().toISOString(),
+          log_date, supplement, taken, quantity: quantity ?? null, taken_at: new Date().toISOString(),
         }, { onConflict: 'log_date,supplement' });
         if (error) throw error;
       },
@@ -671,10 +651,6 @@
         }));
         const ins = await supabase.from('supplement_ingredients').insert(rows);
         if (ins.error) throw ins.error;
-      },
-      async receivedAdd(supplement, received_date, quantity) {
-        const { error } = await supabase.from('supplement_received').insert({ supplement, received_date, quantity: quantity ?? null });
-        if (error) throw error;
       },
     };
 
@@ -808,7 +784,7 @@
     function goToDate(value) {
       $('topbarLogDate').value = value;
       loadDay(value);
-      loadSupplementChecklist(value);
+      loadSupplementLog(value);
     }
 
     // In-app confirm dialog → resolves true (ok) / false (cancel).
@@ -921,70 +897,84 @@
         msg($('saveMsg'), 'Could not load day: ' + e.message, 'err');
       }
     }
-    // ---- Supplement Tracker checklist (tied to the same log date) ----
+    // ---- Supplement log (tied to the same log date) ----
+    // pendingLog: tablet name -> qty, currently staged for this date (starts
+    // as a copy of what's saved, edited via dropdown+Add, committed by the
+    // topbar Save button). originalLog: snapshot as-loaded, used to diff on save.
     let activeSupplements = [];
-    async function loadSupplementChecklist(logDate) {
-      const el = $('suppChecklist');
-      if (!logDate) { el.innerHTML = ''; return; }
+    let pendingLog = new Map();
+    let originalLog = new Map();
+
+    function populateLogTabletSelect() {
+      const sel = $('logTabletSelect');
+      const prev = sel.value;
+      sel.innerHTML = '<option value="">Select tablet…</option>' +
+        activeSupplements.map(s => `<option value="${s.name}">${s.name}</option>`).join('');
+      if (activeSupplements.some(s => s.name === prev)) sel.value = prev;
+      updateLogTabletPreview();
+    }
+    function updateLogTabletPreview() {
+      const s = activeSupplements.find(a => a.name === $('logTabletSelect').value);
+      const img = $('logTabletPreview');
+      if (s && s.image_url) { img.src = s.image_url; img.classList.remove('hidden'); }
+      else { img.src = ''; img.classList.add('hidden'); }
+    }
+    $('logTabletSelect').addEventListener('change', updateLogTabletPreview);
+
+    function renderPendingLog() {
+      const el = $('logPendingList');
+      const entries = [...pendingLog.entries()];
+      if (!entries.length) {
+        el.innerHTML = '<li><span class="when">Nothing logged for this date yet.</span></li>';
+        return;
+      }
+      el.innerHTML = entries.map(([name, qty]) =>
+        `<li><span>${name}</span><span class="when">×${qty} <button class="del-btn" data-remove="${name}" title="Remove">✕</button></span></li>`
+      ).join('');
+      el.querySelectorAll('[data-remove]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          pendingLog.delete(btn.dataset.remove);
+          renderPendingLog();
+        });
+      });
+    }
+
+    $('logAddBtn').addEventListener('click', () => {
+      const name = $('logTabletSelect').value;
+      const qty = $('logQty').value ? parseInt($('logQty').value, 10) : null;
+      if (!name) { msg($('logMsg'), 'Select a tablet first.', 'err'); return; }
+      if (!qty || qty < 1) { msg($('logMsg'), 'Enter a quantity.', 'err'); return; }
+      pendingLog.set(name, qty);
+      renderPendingLog();
+      $('logQty').value = '';
+      msg($('logMsg'), '', '');
+    });
+
+    async function loadSupplementLog(logDate) {
+      const el = $('logPendingList');
+      pendingLog = new Map();
+      originalLog = new Map();
+      if (!logDate) { renderPendingLog(); return; }
       try {
         if (!activeSupplements.length) activeSupplements = await DB.activeSupplements();
+        populateLogTabletSelect();
         if (!activeSupplements.length) {
-          el.innerHTML = '<div class="empty-note">No active tablets — click "+ Add tablet" above.</div>';
+          el.innerHTML = '<li><span class="when">No active tablets — click "+ Add tablet" below.</span></li>';
           return;
         }
         const rows = await DB.supplementLogForDate(logDate);
-        const takenMap = Object.fromEntries(rows.map(r => [r.supplement, r.taken]));
-        populateReceivedSelect();
-        el.innerHTML = activeSupplements.map(s => {
-          const taken = takenMap[s.name] === true;
-          const thumb = s.image_url
-            ? `<img src="${s.image_url}" class="tablet-thumb-sm" alt="" />`
-            : '<span class="tablet-thumb-sm placeholder">💊</span>';
-          return `<label class="check-row${taken ? ' taken' : ''}" data-name="${s.name}">
-            <input type="checkbox" ${taken ? 'checked' : ''} />
-            ${thumb}
-            <span class="cr-name">${s.name}</span><span class="cr-dose">${s.dose || ''}</span>
-          </label>`;
-        }).join('');
-        el.querySelectorAll('.check-row').forEach(row => {
-          const cb = row.querySelector('input');
-          cb.addEventListener('change', async () => {
-            cb.disabled = true;
-            try {
-              await DB.supplementLogSet(logDate, row.dataset.name, cb.checked);
-              row.classList.toggle('taken', cb.checked);
-            } catch (e) {
-              cb.checked = !cb.checked;
-              msg($('saveMsg'), 'Supplement save failed: ' + e.message, 'err');
-            } finally { cb.disabled = false; }
-          });
-        });
+        for (const r of rows) {
+          if (r.taken) {
+            const qty = r.quantity ?? 1;
+            pendingLog.set(r.supplement, qty);
+            originalLog.set(r.supplement, qty);
+          }
+        }
+        renderPendingLog();
       } catch (e) {
-        el.innerHTML = '<div class="empty-note">Could not load supplements: ' + e.message + '</div>';
+        el.innerHTML = '<li><span class="when">Could not load: ' + e.message + '</span></li>';
       }
     }
-
-    // ---- Tablet received ----
-    function populateReceivedSelect() {
-      const sel = $('recvTablet');
-      const prev = sel.value;
-      sel.innerHTML = activeSupplements.map(s => `<option value="${s.name}">${s.name}</option>`).join('');
-      if (activeSupplements.some(s => s.name === prev)) sel.value = prev;
-    }
-    $('recvSave').addEventListener('click', async () => {
-      const tablet = $('recvTablet').value;
-      const date = $('topbarLogDate').value;
-      const qty = $('recvQty').value ? parseInt($('recvQty').value, 10) : null;
-      if (!tablet) { msg($('recvMsg'), 'Add a tablet first.', 'err'); return; }
-      $('recvSave').disabled = true;
-      try {
-        await DB.receivedAdd(tablet, date, qty);
-        msg($('recvMsg'), `Logged: ${tablet}${qty ? ` (${qty})` : ''} received ${date}.`, 'ok');
-        $('recvQty').value = '';
-      } catch (e) {
-        msg($('recvMsg'), 'Save failed: ' + e.message, 'err');
-      } finally { $('recvSave').disabled = false; }
-    });
 
     function suppFormMsg(text, kind) {
       const el = $('suppFormMsg'); el.textContent = text || '';
@@ -1041,10 +1031,10 @@
         if (file) imageUrl = await DB.uploadTabletImage(file, name);
         await DB.supplementUpsert({ name, dose: $('sfDose').value.trim(), sort_order: activeSupplements.length, image_url: imageUrl });
         await DB.ingredientsReplace(name, collectIngredients());
-        activeSupplements = [];   // force a refetch so the new one shows up
+        activeSupplements = await DB.activeSupplements();   // refetch so the new one shows up
+        populateLogTabletSelect();
         $('suppForm').classList.add('hidden');
         suppFormMsg('', '');
-        await loadSupplementChecklist($('topbarLogDate').value);
       } catch (e) {
         suppFormMsg('Save failed: ' + (e.message || ''), 'err');
       } finally { $('sfSave').disabled = false; }
@@ -1064,7 +1054,14 @@
       const filled = FIELDS
         .map(f => ({ ...f, value: $(f.id).value }))
         .filter(f => f.value);
-      if (!filled.length) { msg($('saveMsg'), 'Fill at least one field.', 'err'); return; }
+
+      // Supplement log diff: staged (pendingLog) vs what was loaded (originalLog).
+      const logToUpsert = [...pendingLog.entries()].filter(([name, qty]) => originalLog.get(name) !== qty);
+      const logToClear = [...originalLog.keys()].filter(name => !pendingLog.has(name));
+
+      if (!filled.length && !logToUpsert.length && !logToClear.length) {
+        msg($('saveMsg'), 'Fill at least one field or add a tablet to the log.', 'err'); return;
+      }
 
       // Compute each filled field's UTC instant now, then drop anything that's
       // identical to what was loaded — an untouched field shouldn't trigger an
@@ -1082,7 +1079,9 @@
         const sameReduction = f.id !== 'wakeup' || (loaded.reduction_min || 0) === (f.reduction_min || 0);
         return !(sameTime && sameReduction);
       });
-      if (!toSave.length) { msg($('saveMsg'), 'No changes to save.', ''); return; }
+      if (!toSave.length && !logToUpsert.length && !logToClear.length) {
+        msg($('saveMsg'), 'No changes to save.', ''); return;
+      }
 
       $('saveBtn').disabled = true;
       msg($('saveMsg'), 'Checking…', '');
@@ -1115,7 +1114,16 @@
             await DB.addEvent({ aspect: f.id, title: f.label, datetime: f.iso, log_date: logDate, tz: f.tz, reduction_min: f.reduction_min });
           }
         }
-        msg($('saveMsg'), `Saved ${plan.length} entr${plan.length === 1 ? 'y' : 'ies'}.`, 'ok');
+        for (const [name, qty] of logToUpsert) {
+          await DB.supplementLogSet(logDate, name, true, qty);
+        }
+        for (const name of logToClear) {
+          await DB.supplementLogSet(logDate, name, false, null);
+        }
+        if (logToUpsert.length || logToClear.length) originalLog = new Map(pendingLog);
+
+        const savedCount = plan.length + logToUpsert.length + logToClear.length;
+        msg($('saveMsg'), `Saved ${savedCount} entr${savedCount === 1 ? 'y' : 'ies'}.`, 'ok');
         FIELDS.forEach(f => { $(f.id).value = ''; });
         $('wakeupRedH').value = ''; $('wakeupRedM').value = '';
         loadedValues = {};
@@ -1186,6 +1194,7 @@
       $('refreshBtn').disabled = true;
       try {
         await loadDay($('topbarLogDate').value);
+        await loadSupplementLog($('topbarLogDate').value);
         await loadStats();
         await refreshFasting();
         await refreshSleepLast();
@@ -1205,7 +1214,7 @@
       $('appView').classList.remove('hidden');
       if (!$('topbarLogDate').value) $('topbarLogDate').value = todayDate();
       await loadDay($('topbarLogDate').value);
-      await loadSupplementChecklist($('topbarLogDate').value);
+      await loadSupplementLog($('topbarLogDate').value);
       await refreshFasting();
       await refreshSleepLast();
       await loadStats();
