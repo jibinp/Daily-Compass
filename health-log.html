@@ -116,6 +116,13 @@
     }
     .tz-select-sm:focus { outline: none; border-color: var(--accent); color: var(--text); }
     .zone-tag { color: var(--muted); font-size: 0.72rem; }
+    .unit-select {
+      flex: 0 0 68px;
+      background: var(--field); border: 1px solid var(--border);
+      color: var(--text); border-radius: 10px; padding: 10px 8px;
+      font-size: 0.85rem; color-scheme: dark; cursor: pointer;
+    }
+    .unit-select:focus { outline: none; border-color: var(--accent); }
     .bar {
       height: 10px; background: var(--field);
       border: 1px solid var(--border); border-radius: 6px; overflow: hidden;
@@ -425,6 +432,25 @@
           <div class="msg" id="saveMsg"></div>
 
           <div class="field">
+            <div class="field-head"><span class="icon">⚖️</span><span class="label">Weight / BMI</span></div>
+            <div class="row">
+              <input type="number" step="0.1" id="weightInput" placeholder="Weight" />
+              <select class="unit-select" id="weightUnit" aria-label="Weight unit">
+                <option value="kg">kg</option>
+                <option value="lbs">lbs</option>
+              </select>
+            </div>
+            <div class="row" style="margin-top:8px;">
+              <input type="number" step="0.1" id="heightInput" placeholder="Height" />
+              <select class="unit-select" id="heightUnit" aria-label="Height unit">
+                <option value="cm">cm</option>
+                <option value="in">in</option>
+              </select>
+            </div>
+            <div id="bmiResult" class="fasting-val" style="margin-top:8px;">—</div>
+          </div>
+
+          <div class="field">
             <div class="field-head"><span class="icon">💊</span><span class="label">Supplement log</span></div>
             <div class="muted-note">Pick a tablet, set qty, tap Add. Saves with the topbar Save button — uses the date selected there.</div>
 
@@ -666,6 +692,31 @@
         const ins = await supabase.from('supplement_ingredients').insert(rows);
         if (ins.error) throw ins.error;
       },
+      // ---- Weight / BMI (canonical units: kg, cm) ----
+      async bodyMetricsForDate(log_date) {
+        const { data, error } = await supabase.from('body_metrics')
+          .select('weight_kg, height_cm').eq('log_date', log_date).maybeSingle();
+        if (error) throw error;
+        return data;
+      },
+      // most recent saved height, for defaulting new dates (height rarely changes)
+      async lastHeight() {
+        const { data, error } = await supabase.from('body_metrics')
+          .select('height_cm').not('height_cm', 'is', null)
+          .order('log_date', { ascending: false }).limit(1);
+        if (error) throw error;
+        return data.length ? data[0].height_cm : null;
+      },
+      async bodyMetricsSet(log_date, weight_kg, height_cm) {
+        const { error } = await supabase.from('body_metrics').upsert({
+          log_date, weight_kg: weight_kg ?? null, height_cm: height_cm ?? null,
+        }, { onConflict: 'log_date' });
+        if (error) throw error;
+      },
+      async bodyMetricsDelete(log_date) {
+        const { error } = await supabase.from('body_metrics').delete().eq('log_date', log_date);
+        if (error) throw error;
+      },
     };
 
     // Supabase project ref — used for the "Open in Supabase" dashboard link.
@@ -780,6 +831,90 @@
       { id: 'sleep',     label: 'Sleep' },
     ];
 
+    // ================================================================
+    // Weight / BMI — canonical storage is always kg + cm; the kg/lbs and
+    // cm/in toggles are a display preference only (persisted like the
+    // timezone default), converted at the boundary.
+    // ================================================================
+    const WEIGHT_UNIT_KEY = 'dc_weight_unit';
+    const HEIGHT_UNIT_KEY = 'dc_height_unit';
+    let weightUnit = localStorage.getItem(WEIGHT_UNIT_KEY) || 'kg';
+    let heightUnit = localStorage.getItem(HEIGHT_UNIT_KEY) || 'cm';
+    const round1 = n => Math.round(n * 10) / 10;
+    const kgToLbs = kg => kg * 2.2046226218;
+    const lbsToKg = lbs => lbs / 2.2046226218;
+    const cmToIn = cm => cm / 2.54;
+    const inToCm = inches => inches * 2.54;
+    const weightToKg = (v, unit) => unit === 'lbs' ? lbsToKg(v) : v;
+    const weightFromKg = (kg, unit) => unit === 'lbs' ? kgToLbs(kg) : kg;
+    const heightToCm = (v, unit) => unit === 'in' ? inToCm(v) : v;
+    const heightFromCm = (cm, unit) => unit === 'in' ? cmToIn(cm) : cm;
+    function bmiCategory(bmi) {
+      if (bmi < 18.5) return 'Underweight';
+      if (bmi < 25) return 'Normal';
+      if (bmi < 30) return 'Overweight';
+      return 'Obese';
+    }
+    function computeBmi() {
+      const w = parseFloat($('weightInput').value);
+      const h = parseFloat($('heightInput').value);
+      if (!w || !h) return null;
+      const kg = weightToKg(w, weightUnit);
+      const m = heightToCm(h, heightUnit) / 100;
+      return kg / (m * m);
+    }
+    function updateBmiDisplay() {
+      const bmi = computeBmi();
+      $('bmiResult').textContent = bmi ? `${bmi.toFixed(1)} — ${bmiCategory(bmi)}` : '—';
+    }
+    $('weightInput').addEventListener('input', updateBmiDisplay);
+    $('heightInput').addEventListener('input', updateBmiDisplay);
+    $('weightUnit').value = weightUnit;
+    $('heightUnit').value = heightUnit;
+    $('weightUnit').addEventListener('change', () => {
+      const raw = parseFloat($('weightInput').value);
+      if (!isNaN(raw)) $('weightInput').value = round1(weightFromKg(weightToKg(raw, weightUnit), $('weightUnit').value));
+      weightUnit = $('weightUnit').value;
+      localStorage.setItem(WEIGHT_UNIT_KEY, weightUnit);
+      updateBmiDisplay();
+    });
+    $('heightUnit').addEventListener('change', () => {
+      const raw = parseFloat($('heightInput').value);
+      if (!isNaN(raw)) $('heightInput').value = round1(heightFromCm(heightToCm(raw, heightUnit), $('heightUnit').value));
+      heightUnit = $('heightUnit').value;
+      localStorage.setItem(HEIGHT_UNIT_KEY, heightUnit);
+      updateBmiDisplay();
+    });
+
+    // What's currently saved for the selected date, in canonical units —
+    // null means nothing saved. Used both to diff on Save and to render
+    // the Weight/BMI row in the Selected date card.
+    let loadedWeightKg = null;
+    let loadedHeightCm = null;
+    async function loadBodyMetrics(logDate) {
+      $('weightInput').value = '';
+      loadedWeightKg = null;
+      loadedHeightCm = null;
+      if (!logDate) { updateBmiDisplay(); return; }
+      try {
+        const row = await DB.bodyMetricsForDate(logDate);
+        if (row && row.weight_kg != null) {
+          loadedWeightKg = row.weight_kg;
+          $('weightInput').value = round1(weightFromKg(row.weight_kg, weightUnit));
+        }
+        if (row && row.height_cm != null) {
+          loadedHeightCm = row.height_cm;
+          $('heightInput').value = round1(heightFromCm(row.height_cm, heightUnit));
+        } else {
+          const lastCm = await DB.lastHeight();
+          $('heightInput').value = round1(heightFromCm(lastCm != null ? lastCm : 170, heightUnit));
+        }
+        updateBmiDisplay();
+      } catch (e) {
+        msg($('saveMsg'), 'Could not load weight/height: ' + e.message, 'err');
+      }
+    }
+
     const pad = n => String(n).padStart(2, '0');
     function todayDate() {        // current YYYY-MM-DD
       const d = new Date();
@@ -806,6 +941,7 @@
       $('topbarLogDate').value = value;
       loadDay(value);
       loadSupplementLog(value);
+      loadBodyMetrics(value);
     }
 
     // In-app confirm dialog → resolves true (ok) / false (cancel).
@@ -905,12 +1041,43 @@
       const suppRows = [...originalLog.entries()].map(([name, qty]) =>
         `<li><span>${name}</span><span class="when">×${qty} <button class="edit-btn" data-edit-supp="${name}" data-qty="${qty}" title="Edit">✎</button> <button class="del-btn" data-del-supp="${name}" title="Delete">✕</button></span></li>`
       );
-      el.innerHTML = fieldRows.join('') + suppRows.join('');
+      let bmiRow = '';
+      if (loadedWeightKg != null || loadedHeightCm != null) {
+        const wDisp = loadedWeightKg != null ? `${round1(weightFromKg(loadedWeightKg, weightUnit))} ${weightUnit}` : '—';
+        const hDisp = loadedHeightCm != null ? `${round1(heightFromCm(loadedHeightCm, heightUnit))} ${heightUnit}` : '—';
+        let bmiText = '';
+        if (loadedWeightKg != null && loadedHeightCm != null) {
+          const m = loadedHeightCm / 100;
+          const bmi = loadedWeightKg / (m * m);
+          bmiText = ` · BMI ${bmi.toFixed(1)} (${bmiCategory(bmi)})`;
+        }
+        bmiRow = `<li><span>Weight / BMI</span><span class="when">${wDisp} / ${hDisp}${bmiText} <button class="edit-btn" data-edit-bmi title="Edit">✎</button> <button class="del-btn" data-del-bmi title="Delete">✕</button></span></li>`;
+      }
+      el.innerHTML = fieldRows.join('') + suppRows.join('') + bmiRow;
       el.querySelectorAll('[data-edit-field]').forEach(btn => {
         btn.addEventListener('click', () => editTimeField(btn.dataset.editField));
       });
       el.querySelectorAll('[data-edit-supp]').forEach(btn => {
         btn.addEventListener('click', () => editSupplementEntry(btn.dataset.editSupp, btn.dataset.qty));
+      });
+      const editBmiBtn = el.querySelector('[data-edit-bmi]');
+      if (editBmiBtn) editBmiBtn.addEventListener('click', () => {
+        $('weightInput').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        $('weightInput').focus();
+      });
+      const delBmiBtn = el.querySelector('[data-del-bmi]');
+      if (delBmiBtn) delBmiBtn.addEventListener('click', async () => {
+        const ok = await confirmModal('Delete weight/height for this date? Cannot undo.', { title: 'Delete', okText: 'Delete' });
+        if (!ok) return;
+        delBmiBtn.disabled = true;
+        try {
+          await DB.bodyMetricsDelete($('topbarLogDate').value);
+          await loadBodyMetrics($('topbarLogDate').value);
+          renderSelectedDate();
+        } catch (e) {
+          msg($('saveMsg'), 'Delete failed: ' + e.message, 'err');
+          delBmiBtn.disabled = false;
+        }
       });
       el.querySelectorAll('[data-del]').forEach(btn => {
         btn.addEventListener('click', async () => {
@@ -1148,7 +1315,14 @@
       const logToUpsert = [...pendingLog.entries()];
       const logToClear = [...originalLog.keys()].filter(name => !pendingLog.has(name));
 
-      if (!filled.length && !logToUpsert.length && !logToClear.length) {
+      // Weight/BMI: diff against what was loaded (both canonicalized to kg/cm).
+      const weightRaw = parseFloat($('weightInput').value);
+      const heightRaw = parseFloat($('heightInput').value);
+      const bmiWeightKg = isNaN(weightRaw) ? null : round1(weightToKg(weightRaw, weightUnit));
+      const bmiHeightCm = isNaN(heightRaw) ? null : round1(heightToCm(heightRaw, heightUnit));
+      const bmiChanged = bmiWeightKg !== loadedWeightKg || bmiHeightCm !== loadedHeightCm;
+
+      if (!filled.length && !logToUpsert.length && !logToClear.length && !bmiChanged) {
         msg($('saveMsg'), 'Fill at least one field or add a tablet to the log.', 'err'); return;
       }
 
@@ -1168,7 +1342,7 @@
         const sameReduction = f.id !== 'wakeup' || (loaded.reduction_min || 0) === (f.reduction_min || 0);
         return !(sameTime && sameReduction);
       });
-      if (!toSave.length && !logToUpsert.length && !logToClear.length) {
+      if (!toSave.length && !logToUpsert.length && !logToClear.length && !bmiChanged) {
         msg($('saveMsg'), 'No changes to save.', ''); return;
       }
 
@@ -1211,7 +1385,17 @@
         }
         if (logToUpsert.length || logToClear.length) originalLog = new Map(pendingLog);
 
-        const savedCount = plan.length + logToUpsert.length + logToClear.length;
+        if (bmiChanged) {
+          if (bmiWeightKg == null && bmiHeightCm == null) {
+            await DB.bodyMetricsDelete(logDate);
+          } else {
+            await DB.bodyMetricsSet(logDate, bmiWeightKg, bmiHeightCm);
+          }
+          loadedWeightKg = bmiWeightKg;
+          loadedHeightCm = bmiHeightCm;
+        }
+
+        const savedCount = plan.length + logToUpsert.length + logToClear.length + (bmiChanged ? 1 : 0);
         msg($('saveMsg'), `Saved ${savedCount} entr${savedCount === 1 ? 'y' : 'ies'}.`, 'ok');
         FIELDS.forEach(f => { $(f.id).value = ''; });
         $('wakeupRedH').value = ''; $('wakeupRedM').value = '';
@@ -1284,6 +1468,7 @@
       try {
         await loadDay($('topbarLogDate').value);
         await loadSupplementLog($('topbarLogDate').value);
+        await loadBodyMetrics($('topbarLogDate').value);
         await loadStats();
         await refreshFasting();
         await refreshSleepLast();
@@ -1304,6 +1489,7 @@
       if (!$('topbarLogDate').value) $('topbarLogDate').value = todayDate();
       await loadDay($('topbarLogDate').value);
       await loadSupplementLog($('topbarLogDate').value);
+      await loadBodyMetrics($('topbarLogDate').value);
       await refreshFasting();
       await refreshSleepLast();
       await loadStats();
