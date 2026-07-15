@@ -912,6 +912,9 @@
         } else {
           const lastCm = await DB.lastHeight();
           $('heightInput').value = round1(heightFromCm(lastCm != null ? lastCm : 170, heightUnit));
+          // treat the auto-filled default as the baseline — it's not a change
+          // until the user actually edits it away from the suggested value
+          loadedHeightCm = round1(heightToCm(parseFloat($('heightInput').value), heightUnit));
         }
         updateBmiDisplay();
         updateDirtyIndicator();
@@ -1336,12 +1339,18 @@
       });
       const logToUpsert = [...pendingLog.entries()];
       const logToClear = [...originalLog.keys()].filter(name => !pendingLog.has(name));
+      // logToUpsert is intentionally "everything currently staged" (see Save
+      // handler comment) so re-saving an unchanged qty still works — but that
+      // makes it a poor dirty-check (non-empty whenever anything's logged at
+      // all). Compare the two maps directly instead.
+      const logChanged = pendingLog.size !== originalLog.size ||
+        [...pendingLog.entries()].some(([name, qty]) => originalLog.get(name) !== qty);
       const weightRaw = parseFloat($('weightInput').value);
       const heightRaw = parseFloat($('heightInput').value);
       const bmiWeightKg = isNaN(weightRaw) ? null : round1(weightToKg(weightRaw, weightUnit));
       const bmiHeightCm = isNaN(heightRaw) ? null : round1(heightToCm(heightRaw, heightUnit));
       const bmiChanged = bmiWeightKg !== loadedWeightKg || bmiHeightCm !== loadedHeightCm;
-      const dirty = toSave.length > 0 || logToUpsert.length > 0 || logToClear.length > 0 || bmiChanged;
+      const dirty = toSave.length > 0 || logChanged || bmiChanged;
       return { filled, toSave, logToUpsert, logToClear, bmiWeightKg, bmiHeightCm, bmiChanged, dirty };
     }
     // Reflects unsaved changes on the topbar Save button (label + color).
