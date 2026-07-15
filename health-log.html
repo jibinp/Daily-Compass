@@ -285,21 +285,6 @@
     .check-row .cr-name { font-weight: 600; }
     .check-row .cr-dose { color: var(--muted); font-size: 0.82rem; margin-left: 6px; }
     .check-row.taken { border-color: var(--ok); }
-    .cr-recv-btn {
-      background: none; border: none; color: var(--muted);
-      cursor: pointer; font-size: 1rem; padding: 2px 4px; margin-left: auto; flex: 0 0 auto;
-    }
-    .cr-recv-btn:active { transform: scale(0.9); }
-    .cr-recv-inline { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
-    .cr-recv-inline.hidden { display: none; }
-    .cr-recv-qty {
-      width: 56px; background: var(--bg); border: 1px solid var(--border);
-      color: var(--text); border-radius: 6px; padding: 4px 6px; font-size: 0.8rem;
-    }
-    .cr-recv-confirm {
-      background: var(--accent); color: #04283a; border: none;
-      border-radius: 6px; padding: 4px 8px; font-size: 0.8rem; cursor: pointer; flex: 0 0 auto;
-    }
     .empty-note { color: var(--muted); font-size: 0.85rem; padding: 8px 0; }
     .crs-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0 8px; }
     .mini-btn {
@@ -470,6 +455,17 @@
             </div>
 
             <div class="checklist" id="suppChecklist"></div>
+          </div>
+
+          <div class="field">
+            <div class="field-head"><span class="icon">📦</span><span class="label">Tablet received</span></div>
+            <div class="muted-note">Log when a new bottle/pack of a tablet arrives. Uses the date selected in the topbar.</div>
+            <select class="tz-select-sm" id="recvTablet" aria-label="Tablet received"></select>
+            <div class="row" style="margin-top:6px;">
+              <input type="number" id="recvQty" placeholder="Qty" min="1" style="max-width:80px;" />
+              <button class="now-btn" id="recvSave">Save</button>
+            </div>
+            <div class="msg" id="recvMsg"></div>
           </div>
         </section>
 
@@ -938,6 +934,7 @@
         }
         const rows = await DB.supplementLogForDate(logDate);
         const takenMap = Object.fromEntries(rows.map(r => [r.supplement, r.taken]));
+        populateReceivedSelect();
         el.innerHTML = activeSupplements.map(s => {
           const taken = takenMap[s.name] === true;
           const thumb = s.image_url
@@ -947,11 +944,6 @@
             <input type="checkbox" ${taken ? 'checked' : ''} />
             ${thumb}
             <span class="cr-name">${s.name}</span><span class="cr-dose">${s.dose || ''}</span>
-            <button type="button" class="cr-recv-btn" data-recv="${s.name}" title="Log received">📦</button>
-            <span class="cr-recv-inline hidden" data-recv-inline="${s.name}">
-              <input type="number" class="cr-recv-qty" placeholder="Qty" min="1" />
-              <button type="button" class="cr-recv-confirm" data-recv-confirm="${s.name}">✓</button>
-            </span>
           </label>`;
         }).join('');
         el.querySelectorAll('.check-row').forEach(row => {
@@ -967,42 +959,32 @@
             } finally { cb.disabled = false; }
           });
         });
-        // per-tile "received" logging — toggles a small inline qty input,
-        // always uses the topbar's selected date (no separate date field)
-        el.querySelectorAll('.cr-recv-btn').forEach(btn => {
-          btn.addEventListener('click', (e) => {
-            e.preventDefault(); e.stopPropagation();
-            const inline = el.querySelector(`[data-recv-inline="${CSS.escape(btn.dataset.recv)}"]`);
-            inline.classList.toggle('hidden');
-            if (!inline.classList.contains('hidden')) inline.querySelector('.cr-recv-qty').focus();
-          });
-        });
-        el.querySelectorAll('.cr-recv-qty').forEach(input => {
-          input.addEventListener('click', e => e.stopPropagation());
-        });
-        el.querySelectorAll('.cr-recv-confirm').forEach(btn => {
-          btn.addEventListener('click', async (e) => {
-            e.preventDefault(); e.stopPropagation();
-            const name = btn.dataset.recvConfirm;
-            const inline = btn.closest('.cr-recv-inline');
-            const qtyInput = inline.querySelector('.cr-recv-qty');
-            const qty = qtyInput.value ? parseInt(qtyInput.value, 10) : null;
-            const date = $('topbarLogDate').value;
-            btn.disabled = true;
-            try {
-              await DB.receivedAdd(name, date, qty);
-              inline.classList.add('hidden');
-              qtyInput.value = '';
-              msg($('saveMsg'), `Logged: ${name}${qty ? ` (${qty})` : ''} received ${date}.`, 'ok');
-            } catch (err) {
-              msg($('saveMsg'), 'Save failed: ' + err.message, 'err');
-            } finally { btn.disabled = false; }
-          });
-        });
       } catch (e) {
         el.innerHTML = '<div class="empty-note">Could not load supplements: ' + e.message + '</div>';
       }
     }
+
+    // ---- Tablet received ----
+    function populateReceivedSelect() {
+      const sel = $('recvTablet');
+      const prev = sel.value;
+      sel.innerHTML = activeSupplements.map(s => `<option value="${s.name}">${s.name}</option>`).join('');
+      if (activeSupplements.some(s => s.name === prev)) sel.value = prev;
+    }
+    $('recvSave').addEventListener('click', async () => {
+      const tablet = $('recvTablet').value;
+      const date = $('topbarLogDate').value;
+      const qty = $('recvQty').value ? parseInt($('recvQty').value, 10) : null;
+      if (!tablet) { msg($('recvMsg'), 'Add a tablet first.', 'err'); return; }
+      $('recvSave').disabled = true;
+      try {
+        await DB.receivedAdd(tablet, date, qty);
+        msg($('recvMsg'), `Logged: ${tablet}${qty ? ` (${qty})` : ''} received ${date}.`, 'ok');
+        $('recvQty').value = '';
+      } catch (e) {
+        msg($('recvMsg'), 'Save failed: ' + e.message, 'err');
+      } finally { $('recvSave').disabled = false; }
+    });
 
     function suppFormMsg(text, kind) {
       const el = $('suppFormMsg'); el.textContent = text || '';
