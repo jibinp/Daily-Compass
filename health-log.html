@@ -244,18 +244,24 @@
     }
     .topbar-title { font-weight: 700; font-size: 1rem; color: var(--text); }
     .topbar-left { display: flex; align-items: center; gap: 10px; }
-    .topbar-actions { display: flex; align-items: center; gap: 14px; }
-    .topbar-date-input {
-      width: auto; flex: 0 0 auto;
+    .topbar-actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; row-gap: 8px; }
+    input#topbarLogDate.topbar-date-input {
+      width: auto; flex: 0 0 auto; min-width: 130px;
       padding: 6px 8px; font-size: 0.82rem;
     }
     .topbar-today-btn { padding: 6px 10px; font-size: 0.78rem; }
-    .topbar-msg { font-size: 0.78rem; white-space: nowrap; min-width: 0; }
+    .topbar-msg {
+      font-size: 0.78rem; white-space: nowrap; min-width: 0; flex: 1 1 auto;
+      overflow: hidden; text-overflow: ellipsis;
+    }
     .topbar-msg.ok { color: var(--ok); }
     .topbar-msg.err { color: var(--err); }
     @media (max-width: 480px) {
       .topbar { flex-wrap: wrap; row-gap: 8px; }
-      .topbar-actions { width: 100%; justify-content: flex-end; }
+      .topbar-actions { width: 100%; justify-content: flex-end; flex-wrap: wrap; row-gap: 8px; }
+      /* Forced onto its own full-width row so it can never crowd/overlap the
+         date/Today/Save/OpenDB/Logout buttons on narrow screens. */
+      .topbar-msg { flex-basis: 100%; order: -1; text-align: left; white-space: normal; }
     }
     .link-btn {
       background: none; border: none; color: var(--accent);
@@ -415,6 +421,10 @@
         </div>
       </div>
       <a class="tnode soon"><span class="tw-sp"></span>📊 Stats</a>
+      <div class="tfolder tnode collapsed" data-group="g-settings"><span class="tw">▾</span>⚙️ Settings</div>
+      <div class="tchildren collapsed" id="g-settings">
+        <a class="tnode" href="developer.html"><span class="tw-sp"></span>🛠️ Developer</a>
+      </div>
     </div>
   </nav>
 
@@ -424,10 +434,10 @@
       <span class="topbar-title">📅 Data Entry</span>
     </div>
     <div class="topbar-actions">
+      <span class="topbar-msg" id="topbarMsg"></span>
       <input type="date" id="topbarLogDate" class="topbar-date-input" aria-label="Log date" />
       <button class="now-btn topbar-today-btn" id="topbarTodayBtn">Today</button>
       <button class="mini-btn" id="saveBtn">Save</button>
-      <span class="topbar-msg" id="topbarMsg"></span>
       <a class="link-btn" id="supabaseLink" target="_blank" rel="noopener">OpenDB</a>
       <button class="link-btn" id="logoutBtn">Log out</button>
     </div>
@@ -436,20 +446,20 @@
 
     <!-- ============ APP VIEW ============ -->
     <div id="appView" class="hidden">
+      <nav class="jump-tabs" aria-label="Jump to section">
+        <button type="button" class="jump-tab" data-jump="sectionSummary">📋 Summary</button>
+        <button type="button" class="jump-tab" data-jump="sectionTime">☀️ Time</button>
+        <button type="button" class="jump-tab" data-jump="sectionBmi">⚖️ BMI</button>
+        <button type="button" class="jump-tab" data-jump="sectionFood">🍎 Food</button>
+        <button type="button" class="jump-tab" data-jump="sectionMeal">🍽️ Meal</button>
+        <button type="button" class="jump-tab" data-jump="sectionMstbn">📊 Mstbn</button>
+        <button type="button" class="jump-tab" data-jump="sectionSupp">💊 Supplements</button>
+        <button type="button" class="jump-tab" data-jump="sectionAlcohol">🍺 Alcohol</button>
+      </nav>
       <div class="cols">
 
         <!-- ---------- LEFT: data entry ---------- -->
         <section class="col">
-          <nav class="jump-tabs" aria-label="Jump to section">
-            <button type="button" class="jump-tab" data-jump="sectionSummary">📋 Summary</button>
-            <button type="button" class="jump-tab" data-jump="sectionTime">☀️ Time</button>
-            <button type="button" class="jump-tab" data-jump="sectionBmi">⚖️ BMI</button>
-            <button type="button" class="jump-tab" data-jump="sectionFood">🍎 Food</button>
-            <button type="button" class="jump-tab" data-jump="sectionMeal">🍽️ Meal</button>
-            <button type="button" class="jump-tab" data-jump="sectionMstbn">📊 Mstbn</button>
-            <button type="button" class="jump-tab" data-jump="sectionSupp">💊 Supplements</button>
-            <button type="button" class="jump-tab" data-jump="sectionAlcohol">🍺 Alcohol</button>
-          </nav>
           <div class="grid2 jump-target" id="sectionTime">
             <div class="field">
               <div class="field-head"><span class="icon">☀️</span><span class="label">Wakeup</span></div>
@@ -1030,6 +1040,28 @@
     // ================================================================
     const $ = id => document.getElementById(id);
 
+    // Errors don't show inline anymore (they cluttered/overlapped on mobile) —
+    // logged here instead, read by developer.html. sessionStorage so it
+    // survives navigating there but clears when the tab closes. Repeats of
+    // the same section+message (e.g. a load that retries on every date
+    // change) update the existing row's timestamp/count instead of spamming
+    // a new entry each time.
+    function logDevError(section, text) {
+      try {
+        const key = 'dc_dev_errors';
+        const log = JSON.parse(sessionStorage.getItem(key) || '[]');
+        const existing = log.find(e => e.page === 'Data Entry' && e.section === section && e.message === text);
+        if (existing) {
+          existing.ts = new Date().toISOString();
+          existing.count = (existing.count || 1) + 1;
+        } else {
+          log.push({ ts: new Date().toISOString(), page: 'Data Entry', section, message: text, count: 1 });
+          if (log.length > 300) log.splice(0, log.length - 300);
+        }
+        sessionStorage.setItem(key, JSON.stringify(log));
+      } catch { /* sessionStorage unavailable — nothing to fall back to */ }
+    }
+
     // ---- jump tabs (Data Entry section shortcuts, mainly for mobile) ----
     // Topbar + jump-tabs are both sticky; keep --topbar-h/--sticky-h in sync
     // with their real rendered height (topbar wraps to 2 rows on narrow
@@ -1280,10 +1312,11 @@
         renderFoodItemsList();
         updateDirtyIndicator();
       } catch (e) {
-        $('foodItemsList').innerHTML = '<div class="muted-note">Could not load: ' + e.message + '</div>';
+        logDevError('Food Log', 'Could not load: ' + e.message);
       }
     }
     function foodFormMsg(text, kind) {
+      if (kind === 'err') { logDevError('Food Log (add item)', text); text = ''; }
       const el = $('foodFormMsg'); el.textContent = text || '';
       el.className = 'crs-msg' + (kind ? ' ' + kind : '');
     }
@@ -1452,6 +1485,7 @@
     }
 
     function targetsFormMsg(text, kind) {
+      if (kind === 'err') { logDevError('Nutrition targets', text); text = ''; }
       const el = $('targetsFormMsg'); el.textContent = text || '';
       el.className = 'crs-msg' + (kind ? ' ' + kind : '');
     }
@@ -1497,7 +1531,12 @@
       return new Date(iso).toLocaleString(undefined,
         { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: tz });
     }
+    const MSG_SECTION = { saveMsg: 'Data Entry', logMsg: 'Supplement log', logAlcoholMsg: 'Alcohol log' };
     function msg(el, text, kind) {
+      if (kind === 'err') {
+        logDevError(MSG_SECTION[el.id] || el.id, text);
+        text = '';
+      }
       el.textContent = text;
       el.className = 'msg' + (kind ? ' ' + kind : '');
       // saveMsg sits below the fold once the page is scrolled — mirror it into
@@ -1932,11 +1971,12 @@
         renderSelectedDate();
         updateDirtyIndicator();
       } catch (e) {
-        el.innerHTML = '<li><span class="when">Could not load: ' + e.message + '</span></li>';
+        logDevError('Supplement log', 'Could not load: ' + e.message);
       }
     }
 
     function suppFormMsg(text, kind) {
+      if (kind === 'err') { logDevError('Add tablet', text); text = ''; }
       const el = $('suppFormMsg'); el.textContent = text || '';
       el.className = 'crs-msg' + (kind ? ' ' + kind : '');
     }
@@ -2078,11 +2118,12 @@
         renderPendingAlcohol();
         renderSelectedDate();
       } catch (e) {
-        el.innerHTML = '<li><span class="when">Could not load: ' + e.message + '</span></li>';
+        logDevError('Alcohol log', 'Could not load: ' + e.message);
       }
     }
 
     function alcFormMsg(text, kind) {
+      if (kind === 'err') { logDevError('Add drink', text); text = ''; }
       const el = $('alcFormMsg'); el.textContent = text || '';
       el.className = 'crs-msg' + (kind ? ' ' + kind : '');
     }

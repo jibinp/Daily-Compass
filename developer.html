@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Health Log - All Data — Daily Compass</title>
+  <title>Developer — Daily Compass</title>
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
@@ -58,6 +58,7 @@
       background: none; border: none; color: var(--accent);
       cursor: pointer; font-size: 0.8rem; padding: 0; text-decoration: none;
     }
+    .link-btn.danger { color: var(--err); }
     /* ---- side drawer nav ---- */
     .hamburger {
       background: none; border: none; color: var(--text);
@@ -101,46 +102,22 @@
     .tchildren { padding-left: 14px; }
     .tchildren.collapsed { display: none; }
     .tfolder.collapsed .tw { transform: rotate(-90deg); }
-    /* ---- data table ---- */
-    .data-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    /* ---- error log ---- */
+    .data-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; gap: 10px; }
     .data-head h2 { margin: 0; font-size: 1rem; }
-    .dup-note { color: var(--err); font-size: 0.85rem; margin: 6px 0; }
-    .table-wrap { overflow-x: auto; margin-top: 8px; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
-    th { color: var(--muted); font-weight: 600; }
-    .zone-tag { color: var(--muted); font-size: 0.72rem; }
-    .del-btn {
-      background: none; border: none; color: var(--err);
-      cursor: pointer; font-size: 1rem; padding: 0 4px; line-height: 1;
+    .data-head .actions { display: flex; gap: 14px; align-items: center; }
+    .err-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
+    .err-row {
+      background: var(--field); border: 1px solid var(--border); border-radius: 10px;
+      padding: 10px 12px;
     }
-    .del-btn:active { transform: scale(0.9); }
-    tr.dup td, td.dupcell { background: rgba(248, 113, 113, 0.14); }
+    .err-top { display: flex; justify-content: space-between; gap: 10px; font-size: 0.78rem; color: var(--muted); margin-bottom: 4px; }
+    .err-section { color: var(--accent); font-weight: 600; }
+    .err-count { color: var(--muted); font-weight: 400; }
+    .err-msg { color: var(--err); font-size: 0.86rem; word-break: break-word; }
     .msg { text-align: center; font-size: 0.9rem; margin: 12px 0; min-height: 1.2em; }
     .msg.ok { color: var(--ok); }
     .msg.err { color: var(--err); }
-    /* In-app confirm modal */
-    .overlay {
-      position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6);
-      display: flex; align-items: center; justify-content: center;
-      padding: 24px; z-index: 100;
-    }
-    .modal {
-      background: var(--card); border: 1px solid var(--border);
-      border-radius: 14px; padding: 20px; width: 100%; max-width: 360px;
-    }
-    .modal-title { font-weight: 700; margin-bottom: 10px; }
-    .modal-body { color: var(--text); font-size: 0.9rem; white-space: pre-line; margin-bottom: 18px; }
-    .modal-actions { display: flex; gap: 8px; }
-    .modal-actions button { flex: 1; }
-    .btn-danger {
-      background: var(--err); color: #2a0505; border: none;
-      border-radius: 10px; padding: 12px; font-weight: 700; cursor: pointer;
-    }
-    .btn-cancel {
-      background: var(--field); color: var(--text); border: 1px solid var(--border);
-      border-radius: 10px; padding: 12px; font-weight: 600; cursor: pointer;
-    }
   </style>
 </head>
 <body>
@@ -157,7 +134,7 @@
       <div class="tchildren collapsed" id="g-health">
         <a class="tnode" href="health-log.html"><span class="tw-sp"></span>Data Entry</a>
         <a class="tnode" href="supplement-tracker.html"><span class="tw-sp"></span>Tablet Ingredient Updater</a>
-        <a class="tnode active" href="all-data.html"><span class="tw-sp"></span>All Data</a>
+        <a class="tnode" href="all-data.html"><span class="tw-sp"></span>All Data</a>
       </div>
       <div class="tfolder tnode collapsed" data-group="g-temp"><span class="tw">▾</span>🗓️ Temporary</div>
       <div class="tchildren collapsed" id="g-temp">
@@ -174,14 +151,14 @@
       <a class="tnode soon"><span class="tw-sp"></span>📊 Stats</a>
       <div class="tfolder tnode collapsed" data-group="g-settings"><span class="tw">▾</span>⚙️ Settings</div>
       <div class="tchildren collapsed" id="g-settings">
-        <a class="tnode" href="developer.html"><span class="tw-sp"></span>🛠️ Developer</a>
+        <a class="tnode active" href="developer.html"><span class="tw-sp"></span>🛠️ Developer</a>
       </div>
     </div>
   </nav>
 
   <div class="topbar">
     <button class="hamburger" id="navToggle" aria-label="Open menu">☰</button>
-    <span class="topbar-title">🩺 Health Log - All Data</span>
+    <span class="topbar-title">🛠️ Developer</span>
     <button class="link-btn" id="logoutBtn">Log out</button>
   </div>
 
@@ -190,33 +167,16 @@
 
       <section class="field">
         <div class="data-head">
-          <h2>All data</h2>
-          <button class="link-btn" id="refreshBtn">↻ Refresh</button>
+          <h2>Error log</h2>
+          <div class="actions">
+            <button class="link-btn" id="refreshBtn">↻ Refresh</button>
+            <button class="link-btn danger" id="clearBtn">Clear</button>
+          </div>
         </div>
-        <div class="msg" id="dataMsg"></div>
-        <div class="dup-note hidden" id="dupNote"></div>
-        <div class="table-wrap">
-          <table id="dataTable">
-            <thead>
-              <tr><th>Date</th><th>Wakeup</th><th>Eat start</th><th>Eat end</th><th>Sleep</th></tr>
-            </thead>
-            <tbody id="dataBody"></tbody>
-          </table>
-        </div>
+        <div class="msg" id="devMsg"></div>
+        <ul class="err-list" id="errList"></ul>
       </section>
 
-    </div>
-  </div>
-
-  <!-- In-app confirm modal -->
-  <div id="overlay" class="overlay hidden">
-    <div class="modal">
-      <div class="modal-title" id="modalTitle">Confirm</div>
-      <div class="modal-body" id="modalBody"></div>
-      <div class="modal-actions">
-        <button class="btn-cancel" id="modalCancel">Cancel</button>
-        <button class="btn-danger" id="modalOk">Delete</button>
-      </div>
     </div>
   </div>
 
@@ -228,24 +188,10 @@
     const SUPABASE_KEY = 'sb_publishable_c1BhUlrZPf2YsXW_5LdrZw_-wYh4lJM';
     const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-    // single data-access surface (HLD §9)
     const DB = {
       onAuthChange(cb) { supabase.auth.onAuthStateChange((_e, s) => cb(s)); },
       async currentSession() { const { data } = await supabase.auth.getSession(); return data.session; },
       async signOut() { await supabase.auth.signOut(); },
-      async allEvents() {
-        const { data, error } = await supabase
-          .from('events')
-          .select('id, aspect, title, datetime, log_date, tz, reduction_min')
-          .order('log_date', { ascending: false })
-          .order('datetime', { ascending: true });
-        if (error) throw error;
-        return data;
-      },
-      async deleteEvent(id) {
-        const { error } = await supabase.from('events').delete().eq('id', id);
-        if (error) throw error;
-      },
     };
 
     const $ = id => document.getElementById(id);
@@ -270,128 +216,51 @@
 
     $('logoutBtn').addEventListener('click', async () => { await DB.signOut(); });
 
-    function dataMsg(text, kind) {
-      const el = $('dataMsg'); el.textContent = text || '';
+    function devMsg(text, kind) {
+      const el = $('devMsg'); el.textContent = text || '';
       el.className = 'msg' + (kind ? ' ' + kind : '');
     }
 
-    // In-app confirm dialog → resolves true (ok) / false (cancel).
-    function confirmModal(body, { title = 'Confirm', okText = 'Delete' } = {}) {
-      return new Promise(resolve => {
-        $('modalTitle').textContent = title;
-        $('modalBody').textContent = body;
-        $('modalOk').textContent = okText;
-        $('overlay').classList.remove('hidden');
-        const done = (val) => {
-          $('overlay').classList.add('hidden');
-          $('modalOk').onclick = null;
-          $('modalCancel').onclick = null;
-          resolve(val);
-        };
-        $('modalOk').onclick = () => done(true);
-        $('modalCancel').onclick = () => done(false);
-      });
+    const ERR_KEY = 'dc_dev_errors';
+    function readErrors() {
+      try { return JSON.parse(sessionStorage.getItem(ERR_KEY) || '[]'); }
+      catch { return []; }
     }
-
-    // Time zones: display-only here (read the shared default; no switcher —
-    // this is a read-only history view, not an entry form).
-    const TZ_KEY = 'dc_tz';
-    const detectedTz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-    const currentTz = localStorage.getItem(TZ_KEY) || detectedTz;
-    const shortZone = tz => (tz || '').split('/').pop().replace(/_/g, ' ');
-    function fmtWhen(iso, tz = currentTz) {
+    function fmtTs(iso) {
       return new Date(iso).toLocaleString(undefined,
-        { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: tz });
+        { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
     }
-    const pad = n => String(n).padStart(2, '0');
-    const dayKey = iso => {
-      const d = new Date(iso);
-      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-    };
-
-    const FIELDS = [
-      { id: 'wakeup',    label: 'Wakeup' },
-      { id: 'eat_start', label: 'Eating start' },
-      { id: 'eat_end',   label: 'Eating end' },
-      { id: 'sleep',     label: 'Sleep' },
-    ];
-
-    // One row per day; columns Date | Wakeup | Eat start | Eat end | Sleep.
-    async function renderDataTable() {
-      const rows = await DB.allEvents();
-      const body = $('dataBody');
-      body.innerHTML = '';
-      if (!rows.length) {
-        body.innerHTML = '<tr><td colspan="5">Nothing yet.</td></tr>';
-        $('dupNote').classList.add('hidden');
+    function renderErrors() {
+      const list = readErrors().slice().reverse();   // newest first
+      const el = $('errList');
+      if (!list.length) {
+        el.innerHTML = '<li class="err-row">No errors logged this session.</li>';
         return;
       }
-      // group by log day → { aspect: [rows] }
-      const days = {};
-      for (const r of rows) {
-        const k = r.log_date || dayKey(r.datetime);   // fallback for old rows
-        (days[k] = days[k] || {});
-        (days[k][r.aspect] = days[k][r.aspect] || []).push(r);
-      }
-      let dupCount = 0;
-      const cell = list => {
-        if (!list || !list.length) return '<td>—</td>';
-        const dup = list.length > 1;
-        if (dup) dupCount++;
-        const inner = list.map(r => {
-          const z = r.tz || currentTz;
-          const tag = z === currentTz ? '' : ` <span class="zone-tag">${shortZone(z)}</span>`;
-          return `${fmtWhen(r.datetime, z)}${tag} <button class="del-btn" data-id="${r.id}" title="Delete">✕</button>`;
-        }).join('<br>');
-        return `<td class="${dup ? 'dupcell' : ''}">${dup ? '⚠ ' : ''}${inner}</td>`;
-      };
-      for (const k of Object.keys(days).sort().reverse()) {
-        const d = days[k];
-        const dateLabel = new Date(`${k}T00:00`)
-          .toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${dateLabel}</td>` + FIELDS.map(f => cell(d[f.id])).join('');
-        body.appendChild(tr);
-      }
-      const note = $('dupNote');
-      if (dupCount) {
-        note.textContent = '⚠ Some days have more than one of the same entry. Remove extras with ✕.';
-        note.classList.remove('hidden');
-      } else {
-        note.classList.add('hidden');
-      }
+      el.innerHTML = list.map(e => {
+        const label = e.page && e.page !== e.section ? `${e.page} — ${e.section}` : e.section;
+        const countTag = e.count > 1 ? ` <span class="err-count">×${e.count}</span>` : '';
+        return `
+        <li class="err-row">
+          <div class="err-top"><span class="err-section">${label}${countTag}</span><span>${fmtTs(e.ts)}</span></div>
+          <div class="err-msg">${e.message}</div>
+        </li>
+      `;
+      }).join('');
     }
 
-    $('refreshBtn').addEventListener('click', async () => {
-      $('refreshBtn').disabled = true;
-      try { await renderDataTable(); }
-      catch (e) { dataMsg('Refresh failed: ' + e.message, 'err'); }
-      finally { $('refreshBtn').disabled = false; }
-    });
-
-    // Delete a cell entry (event delegation on the table body)
-    $('dataBody').addEventListener('click', async (e) => {
-      const btn = e.target.closest('.del-btn');
-      if (!btn) return;
-      const ok = await confirmModal('Delete this entry? Cannot undo.',
-        { title: 'Delete', okText: 'Delete' });
-      if (!ok) return;
-      btn.disabled = true;
-      try {
-        await DB.deleteEvent(btn.dataset.id);
-        await renderDataTable();
-      } catch (err) {
-        btn.disabled = false;
-        dataMsg('Delete failed: ' + err.message, 'err');
-      }
+    $('refreshBtn').addEventListener('click', renderErrors);
+    $('clearBtn').addEventListener('click', () => {
+      sessionStorage.removeItem(ERR_KEY);
+      renderErrors();
+      devMsg('Cleared.', 'ok');
     });
 
     // ---- route: no session → sign in on the picker page ----
     function showLogin() { window.location.replace('index.html'); }
     async function showApp() {
       $('appView').classList.remove('hidden');
-      try { await renderDataTable(); }
-      catch (e) { dataMsg('Could not load: ' + e.message, 'err'); }
+      renderErrors();
     }
 
     DB.onAuthChange(session => { if (session) showApp(); else showLogin(); });
