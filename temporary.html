@@ -125,8 +125,10 @@
     .tfolder.collapsed .tw { transform: rotate(-90deg); }
     /* ---- in-page tab bar ---- */
     .tabs {
+      position: sticky; top: var(--topbar-h, 0px); z-index: 40;
       display: flex; gap: 4px; overflow-x: auto;
-      border-bottom: 1px solid var(--border); margin: 8px 0 20px;
+      border-bottom: 1px solid var(--border); margin: 0 0 20px;
+      background: var(--bg); padding-top: 4px;
     }
     .tab {
       background: none; border: none; color: var(--muted);
@@ -165,7 +167,12 @@
     .crs-msg { font-size: 0.83rem; margin: 6px 0; min-height: 1.1em; }
     .crs-msg.ok { color: var(--ok); }
     .crs-msg.err { color: var(--err); }
-    .table-wrap { overflow-x: auto; margin-top: 8px; }
+    /* overflow-x alone would implicitly force overflow-y to 'auto' too (per
+       spec, 'visible' can't pair with a non-visible axis) — turning this
+       into its own scroll box the sticky header would lock to instead of
+       the page. Made deliberate instead: a bounded self-scrolling table
+       with its own properly-behaving sticky header. */
+    .table-wrap { overflow: auto; max-height: 65vh; margin-top: 8px; }
     .crs-table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
     .crs-table th, .crs-table td {
       text-align: left; padding: 8px 10px;
@@ -220,7 +227,10 @@
     /* ---- draws table ---- */
     .draws-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; }
     .draws-table th, .draws-table td { padding: 7px 10px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
-    .draws-table th { color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--card); cursor: pointer; user-select: none; }
+    .draws-table th {
+      color: var(--muted); font-weight: 600; background: var(--card); cursor: pointer; user-select: none;
+      position: sticky; top: 0;
+    }
     .draws-table th:hover { color: var(--text); }
     .draws-filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 4px; }
     .draws-filters input, .draws-filters select {
@@ -589,6 +599,21 @@
 
     const $ = id => document.getElementById(id);
 
+    // Topbar + the tabs row are both sticky; keep --topbar-h/--sticky-h in
+    // sync with their real rendered height (topbar wraps on narrow screens)
+    // so the tabs row sits right under the topbar, and table headers sit
+    // right under both instead of overlapping them.
+    function updateStickyOffsets() {
+      const topbarEl = document.querySelector('.topbar');
+      const tabsEl = document.querySelector('.tabs');
+      const topbarH = topbarEl ? topbarEl.offsetHeight : 0;
+      const tabsH = tabsEl ? tabsEl.offsetHeight : 0;
+      document.documentElement.style.setProperty('--topbar-h', topbarH + 'px');
+      document.documentElement.style.setProperty('--sticky-h', (topbarH + tabsH) + 'px');
+    }
+    window.addEventListener('resize', updateStickyOffsets);
+    updateStickyOffsets();
+
     // ---- side drawer nav ----
     const openNav  = () => { $('sidebar').classList.add('open'); $('navBackdrop').classList.add('open'); };
     const closeNav = () => { $('sidebar').classList.remove('open'); $('navBackdrop').classList.remove('open'); };
@@ -598,10 +623,10 @@
     // ---- Settings badge: shows a count when unresolved dev errors exist ----
     (function updateSettingsBadge() {
       try {
-        const log = JSON.parse(sessionStorage.getItem('dc_dev_errors') || '[]');
+        const log = JSON.parse(localStorage.getItem('dc_dev_errors') || '[]');
         const badge = document.getElementById('settingsBadge');
         if (badge && log.length) { badge.textContent = log.length; badge.classList.remove('hidden'); }
-      } catch { /* sessionStorage unavailable */ }
+      } catch { /* localStorage unavailable */ }
     })();
     document.addEventListener('keydown', e => { if (e.key === 'Escape') closeNav(); });
     // tree folder expand/collapse
@@ -1327,6 +1352,7 @@
     function showLogin() { window.location.replace('index.html'); }
     async function showApp() {
       $('appView').classList.remove('hidden');
+      updateStickyOffsets();
       try { await loadCrs(); } catch (e) { crsMsg('Could not load CRS data: ' + (e.message || ''), 'err'); }
       try { await loadDraws(); } catch (e) { $('drawsMeta').textContent = 'Could not load draws: ' + (e.message || ''); }
       try { renderAnalysis(); renderBandAnalysis(); renderGrowth(); } catch (e) { $('analysisMeta').textContent = 'Could not compute analysis: ' + (e.message || ''); }

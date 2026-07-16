@@ -219,10 +219,10 @@
     // ---- Settings badge: shows a count when unresolved dev errors exist ----
     (function updateSettingsBadge() {
       try {
-        const log = JSON.parse(sessionStorage.getItem('dc_dev_errors') || '[]');
+        const log = JSON.parse(localStorage.getItem('dc_dev_errors') || '[]');
         const badge = document.getElementById('settingsBadge');
         if (badge && log.length) { badge.textContent = log.length; badge.classList.remove('hidden'); }
-      } catch { /* sessionStorage unavailable */ }
+      } catch { /* localStorage unavailable */ }
     })();
     document.addEventListener('keydown', e => { if (e.key === 'Escape') closeNav(); });
     $('sidebar').addEventListener('click', e => {
@@ -240,7 +240,7 @@
 
     const ERR_KEY = 'dc_dev_errors';
     function readErrors() {
-      try { return JSON.parse(sessionStorage.getItem(ERR_KEY) || '[]'); }
+      try { return JSON.parse(localStorage.getItem(ERR_KEY) || '[]'); }
       catch { return []; }
     }
     function fmtTs(iso) {

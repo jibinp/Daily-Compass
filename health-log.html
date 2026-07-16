@@ -1045,9 +1045,10 @@
     const $ = id => document.getElementById(id);
 
     // Errors don't show inline anymore (they cluttered/overlapped on mobile) —
-    // logged here instead, read by developer.html. sessionStorage so it
-    // survives navigating there but clears when the tab closes. Repeats of
-    // the same section+message (e.g. a load that retries on every date
+    // logged here instead, read by developer.html. localStorage (not
+    // sessionStorage) so it's shared across tabs/windows/the home-screen
+    // PWA instance too, not just the tab where the error happened. Repeats
+    // of the same section+message (e.g. a load that retries on every date
     // change) update the existing row's timestamp/count instead of spamming
     // a new entry each time.
     // Shows a count on the sidebar's Settings item when unresolved dev
@@ -1055,15 +1056,15 @@
     // something new, so it updates live within the same page view too.
     function updateSettingsBadge() {
       try {
-        const log = JSON.parse(sessionStorage.getItem('dc_dev_errors') || '[]');
+        const log = JSON.parse(localStorage.getItem('dc_dev_errors') || '[]');
         const badge = document.getElementById('settingsBadge');
         if (badge && log.length) { badge.textContent = log.length; badge.classList.remove('hidden'); }
-      } catch { /* sessionStorage unavailable */ }
+      } catch { /* localStorage unavailable */ }
     }
     function logDevError(section, text) {
       try {
         const key = 'dc_dev_errors';
-        const log = JSON.parse(sessionStorage.getItem(key) || '[]');
+        const log = JSON.parse(localStorage.getItem(key) || '[]');
         const existing = log.find(e => e.page === 'Data Entry' && e.section === section && e.message === text);
         if (existing) {
           existing.ts = new Date().toISOString();
@@ -1072,9 +1073,9 @@
           log.push({ ts: new Date().toISOString(), page: 'Data Entry', section, message: text, count: 1 });
           if (log.length > 300) log.splice(0, log.length - 300);
         }
-        sessionStorage.setItem(key, JSON.stringify(log));
+        localStorage.setItem(key, JSON.stringify(log));
         updateSettingsBadge();
-      } catch { /* sessionStorage unavailable — nothing to fall back to */ }
+      } catch { /* localStorage unavailable — nothing to fall back to */ }
     }
 
     // ---- jump tabs (Data Entry section shortcuts, mainly for mobile) ----

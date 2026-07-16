@@ -281,24 +281,25 @@
     const $ = id => document.getElementById(id);
     const msg = (el, text, kind) => { el.textContent = text; el.className = 'msg' + (kind ? ' ' + kind : ''); };
 
-    // Shared with health-log.html's error log (same sessionStorage key) —
-    // see developer.html. Runs a startup health check here (below) so
+    // Shared with health-log.html's error log (same localStorage key, so it
+    // syncs across tabs/windows/the home-screen PWA instance) — see
+    // developer.html. Runs a startup health check here (below) so
     // schema/DB issues surface as soon as the app opens, not only once you
     // happen to visit the specific page that triggers the broken query.
     function updateSettingsBadge() {
       try {
-        const log = JSON.parse(sessionStorage.getItem('dc_dev_errors') || '[]');
+        const log = JSON.parse(localStorage.getItem('dc_dev_errors') || '[]');
         if (!log.length) return;
         ['settingsBadge', 'settingsTileBadge'].forEach(id => {
           const badge = document.getElementById(id);
           if (badge) { badge.textContent = log.length; badge.classList.remove('hidden'); }
         });
-      } catch { /* sessionStorage unavailable */ }
+      } catch { /* localStorage unavailable */ }
     }
     function logDevError(section, text) {
       try {
         const key = 'dc_dev_errors';
-        const log = JSON.parse(sessionStorage.getItem(key) || '[]');
+        const log = JSON.parse(localStorage.getItem(key) || '[]');
         const existing = log.find(e => e.page === 'Startup Check' && e.section === section && e.message === text);
         if (existing) {
           existing.ts = new Date().toISOString();
@@ -307,9 +308,9 @@
           log.push({ ts: new Date().toISOString(), page: 'Startup Check', section, message: text, count: 1 });
           if (log.length > 300) log.splice(0, log.length - 300);
         }
-        sessionStorage.setItem(key, JSON.stringify(log));
+        localStorage.setItem(key, JSON.stringify(log));
         updateSettingsBadge();
-      } catch { /* sessionStorage unavailable */ }
+      } catch { /* localStorage unavailable */ }
     }
     // One cheap 1-row read per table the app relies on — catches schema
     // drift (missing column/table) anywhere, right at app-open time.
