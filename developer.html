@@ -110,6 +110,7 @@
     /* ---- error log ---- */
     .data-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; gap: 10px; }
     .data-head h2 { margin: 0; font-size: 1rem; }
+    .muted-note { color: var(--muted); font-size: 0.82rem; margin: 6px 0 10px; }
     .data-head .actions { display: flex; gap: 14px; align-items: center; }
     .err-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
     .err-row {
@@ -169,6 +170,17 @@
 
   <div class="wrap">
     <div id="appView" class="hidden">
+
+      <section class="field">
+        <div class="data-head">
+          <h2>Deploy check</h2>
+          <div class="actions">
+            <button class="link-btn" id="deployRefreshBtn">↻ Check now</button>
+          </div>
+        </div>
+        <div class="muted-note">Fetched fresh from the server just now, bypassing any cache — this is what's actually live, regardless of what your browser/home-screen app is showing you.</div>
+        <ul class="err-list" id="deployInfo"></ul>
+      </section>
 
       <section class="field">
         <div class="data-head">
@@ -257,11 +269,36 @@
 
     $('refreshBtn').addEventListener('click', renderErrors);
 
+    // Fetches files straight from the server (cache: 'no-store' + a
+    // cache-busting query string) so this always reflects what's actually
+    // deployed right now, regardless of what the browser/home-screen app
+    // has cached for the page you're looking at.
+    const DEPLOY_CHECK_FILES = ['developer.html', 'health-log.html'];
+    async function checkDeployVersion() {
+      const el = $('deployInfo');
+      el.innerHTML = DEPLOY_CHECK_FILES.map(f =>
+        `<li class="err-row" data-file="${f}"><div class="err-top"><span class="err-section">${f}</span></div><div class="err-msg">Checking…</div></li>`
+      ).join('');
+      for (const f of DEPLOY_CHECK_FILES) {
+        const li = el.querySelector(`[data-file="${CSS.escape(f)}"] .err-msg`);
+        try {
+          const res = await fetch(f + '?v=' + Date.now(), { cache: 'no-store' });
+          const lastMod = res.headers.get('last-modified');
+          li.textContent = lastMod ? 'Server has: ' + new Date(lastMod).toLocaleString() : 'No Last-Modified header returned.';
+          li.style.color = 'var(--ok)';
+        } catch (e) {
+          li.textContent = 'Check failed: ' + e.message;
+        }
+      }
+    }
+    $('deployRefreshBtn').addEventListener('click', checkDeployVersion);
+
     // ---- route: no session → sign in on the picker page ----
     function showLogin() { window.location.replace('index.html'); }
     async function showApp() {
       $('appView').classList.remove('hidden');
       renderErrors();
+      checkDeployVersion();
     }
 
     DB.onAuthChange(session => { if (session) showApp(); else showLogin(); });
