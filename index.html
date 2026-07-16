@@ -264,6 +264,16 @@
           </span>
           <span class="soon-tag">Soon</span>
         </a>
+
+        <a class="app-tile" href="developer.html">
+          <span class="app-icon">⚙️</span>
+          <span class="app-text">
+            <span class="app-name">Settings</span>
+            <span class="app-desc">Developer error log</span>
+          </span>
+          <span class="nav-badge hidden" id="settingsTileBadge"></span>
+          <span class="go-tag">→</span>
+        </a>
       </div>
     </div>
   </div>
@@ -291,8 +301,11 @@
     (function updateSettingsBadge() {
       try {
         const log = JSON.parse(sessionStorage.getItem('dc_dev_errors') || '[]');
-        const badge = document.getElementById('settingsBadge');
-        if (badge && log.length) { badge.textContent = log.length; badge.classList.remove('hidden'); }
+        if (!log.length) return;
+        ['settingsBadge', 'settingsTileBadge'].forEach(id => {
+          const badge = document.getElementById(id);
+          if (badge) { badge.textContent = log.length; badge.classList.remove('hidden'); }
+        });
       } catch { /* sessionStorage unavailable */ }
     })();
     document.addEventListener('keydown', e => { if (e.key === 'Escape') closeNav(); });

@@ -59,7 +59,6 @@
       padding: 10px 2px; margin-bottom: 4px;
       background: var(--bg); border-bottom: 1px solid var(--border);
       scrollbar-width: none;
-      -webkit-transform: translateZ(0); transform: translateZ(0);
     }
     .jump-tabs::-webkit-scrollbar { display: none; }
     .jump-tab {
@@ -247,9 +246,6 @@
       font-size: 0.85rem; color: var(--muted);
       padding: 12px 20px; border-bottom: 1px solid var(--border);
       background: var(--bg);
-      /* iOS Safari can show a hairline gap/flicker on sticky elements during
-         momentum scroll — forcing a compositing layer fixes it. */
-      -webkit-transform: translateZ(0); transform: translateZ(0);
     }
     .topbar-title { font-weight: 700; font-size: 1rem; color: var(--text); }
     .topbar-left { display: flex; align-items: center; gap: 10px; }
