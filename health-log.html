@@ -54,8 +54,10 @@
       margin-bottom: 14px;
     }
     .jump-tabs {
+      position: sticky; top: var(--topbar-h, 0px); z-index: 40;
       display: flex; gap: 8px; overflow-x: auto; -webkit-overflow-scrolling: touch;
-      padding: 2px 2px 10px; margin-bottom: 4px;
+      padding: 10px 2px; margin-bottom: 4px;
+      background: var(--bg); border-bottom: 1px solid var(--border);
       scrollbar-width: none;
     }
     .jump-tabs::-webkit-scrollbar { display: none; }
@@ -66,6 +68,7 @@
       cursor: pointer;
     }
     .jump-tab:active { border-color: var(--accent); color: var(--text); }
+    .jump-target { scroll-margin-top: var(--sticky-h, 0px); }
     .field-head {
       display: flex;
       align-items: center;
@@ -446,7 +449,7 @@
             <button type="button" class="jump-tab" data-jump="sectionSupp">💊 Supplements</button>
             <button type="button" class="jump-tab" data-jump="sectionAlcohol">🍺 Alcohol</button>
           </nav>
-          <div class="grid2" id="sectionTime">
+          <div class="grid2 jump-target" id="sectionTime">
             <div class="field">
               <div class="field-head"><span class="icon">☀️</span><span class="label">Wakeup</span></div>
               <div class="row">
@@ -490,7 +493,7 @@
 
           <div class="msg" id="saveMsg"></div>
 
-          <div class="field" id="sectionBmi">
+          <div class="field jump-target" id="sectionBmi">
             <div class="field-head"><span class="icon">⚖️</span><span class="label">Weight / BMI</span></div>
             <div class="row">
               <input type="number" step="0.1" id="weightInput" placeholder="Weight" />
@@ -509,7 +512,7 @@
             <div id="bmiResult" class="fasting-val" style="margin-top:8px;">—</div>
           </div>
 
-          <div class="field" id="sectionFood">
+          <div class="field jump-target" id="sectionFood">
             <div class="field-head"><span class="icon">🍎</span><span class="label">Food Log</span></div>
             <div class="muted-note">Fill in whatever you had today. Saves with the topbar Save button.</div>
             <div id="foodItemsList"></div>
@@ -527,7 +530,7 @@
             </div>
           </div>
 
-          <div class="field" id="sectionMeal">
+          <div class="field jump-target" id="sectionMeal">
             <div class="field-head"><span class="icon">🍽️</span><span class="label">Meal Log</span></div>
             <div class="muted-note">One entry per day. Saves with the topbar Save button.</div>
 
@@ -567,7 +570,7 @@
             </div>
           </div>
 
-          <div class="field" id="sectionMstbn">
+          <div class="field jump-target" id="sectionMstbn">
             <div class="field-head"><span class="icon">📊</span><span class="label">Mstbn</span></div>
             <div class="muted-note">One entry per day. Saves with the topbar Save button.</div>
             <div class="macro-grid">
@@ -597,7 +600,7 @@
             <datalist id="currencyList"><option value="CAD"></option><option value="INR"></option><option value="USD"></option></datalist>
           </div>
 
-          <div class="field" id="sectionSupp">
+          <div class="field jump-target" id="sectionSupp">
             <div class="field-head"><span class="icon">💊</span><span class="label">Supplement log</span></div>
             <div class="muted-note">Pick a tablet, set qty, tap Add. Saves with the topbar Save button — uses the date selected there.</div>
 
@@ -632,7 +635,7 @@
             </div>
           </div>
 
-          <div class="field" id="sectionAlcohol">
+          <div class="field jump-target" id="sectionAlcohol">
             <div class="field-head"><span class="icon">🍺</span><span class="label">Alcohol log</span></div>
             <div class="muted-note">Pick a drink, set shots, tap Add. Saves with the topbar Save button — uses the date selected there.</div>
 
@@ -1027,6 +1030,21 @@
     const $ = id => document.getElementById(id);
 
     // ---- jump tabs (Data Entry section shortcuts, mainly for mobile) ----
+    // Topbar + jump-tabs are both sticky; keep --topbar-h/--sticky-h in sync
+    // with their real rendered height (topbar wraps to 2 rows on narrow
+    // screens) so the tab row sits right under the topbar, and scrollIntoView
+    // lands sections just below both instead of underneath them.
+    function updateStickyOffsets() {
+      const topbarEl = document.querySelector('.topbar');
+      const tabsEl = document.querySelector('.jump-tabs');
+      const topbarH = topbarEl ? topbarEl.offsetHeight : 0;
+      const tabsH = tabsEl ? tabsEl.offsetHeight : 0;
+      document.documentElement.style.setProperty('--topbar-h', topbarH + 'px');
+      document.documentElement.style.setProperty('--sticky-h', (topbarH + tabsH) + 'px');
+    }
+    window.addEventListener('resize', updateStickyOffsets);
+    updateStickyOffsets();
+
     document.querySelectorAll('.jump-tab').forEach(btn => {
       btn.addEventListener('click', () => {
         const target = $(btn.dataset.jump);
@@ -2389,6 +2407,7 @@
     }
     async function showApp(session) {
       $('appView').classList.remove('hidden');
+      updateStickyOffsets();
       if (!$('topbarLogDate').value) $('topbarLogDate').value = todayDate();
       await loadDay($('topbarLogDate').value);
       await loadSupplementLog($('topbarLogDate').value);
