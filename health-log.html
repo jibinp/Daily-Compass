@@ -539,8 +539,8 @@
           </div>
 
           <div class="field">
-            <div class="field-head"><span class="icon">📊</span><span class="label">Daily Counts</span></div>
-            <div class="muted-note">One entry per day. Saves with the topbar Save button.</div>
+            <div class="field-head"><span class="icon">📊</span><span class="label">Mstbn</span></div>
+            <div class="muted-note">Counts save with the topbar Save button. Money entries save immediately.</div>
             <div class="macro-grid">
               <div><label class="muted-note" for="dcMstbn">Mstbn</label><input type="number" step="any" id="dcMstbn" placeholder="0" /></div>
               <div><label class="muted-note" for="dcFk">Fk</label><input type="number" step="any" id="dcFk" placeholder="0" /></div>
@@ -549,11 +549,7 @@
               <div><label class="muted-note" for="dcAoP">AoP</label><input type="number" step="any" id="dcAoP" placeholder="0" /></div>
               <div><label class="muted-note" for="dcSxCl">sxCl</label><input type="number" step="any" id="dcSxCl" placeholder="0" /></div>
             </div>
-          </div>
 
-          <div class="field">
-            <div class="field-head"><span class="icon">💰</span><span class="label">Money Log</span></div>
-            <div class="muted-note">Each entry saves immediately — uses the date selected at top.</div>
             <select class="tz-select-sm" id="moneyCategorySelect" aria-label="Category"></select>
             <div class="log-add-row">
               <input type="number" step="any" id="moneyAmount" placeholder="Amount" />
@@ -1629,7 +1625,7 @@
       const hasCounts = DC_FIELDS.some(f => loadedCounts[f.key] != null);
       if (hasCounts) {
         const parts = DC_FIELDS.filter(f => loadedCounts[f.key] != null).map(f => `${f.label} ${loadedCounts[f.key]}`).join(', ');
-        countsRow = `<li><span>Daily Counts</span><span class="when">${parts} <button class="edit-btn" data-edit-counts title="Edit">✎</button> <button class="del-btn" data-del-counts title="Delete">✕</button></span></li>`;
+        countsRow = `<li><span>Mstbn</span><span class="when">${parts} <button class="edit-btn" data-edit-counts title="Edit">✎</button> <button class="del-btn" data-del-counts title="Delete">✕</button></span></li>`;
       }
       const moneyRows = moneyEntries.map(m =>
         `<li><span>${m.category}</span><span class="when">${m.amount} ${m.currency} <button class="del-btn" data-del-money="${m.id}" title="Delete">✕</button></span></li>`
