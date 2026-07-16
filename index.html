@@ -281,14 +281,11 @@
     const $ = id => document.getElementById(id);
     const msg = (el, text, kind) => { el.textContent = text; el.className = 'msg' + (kind ? ' ' + kind : ''); };
 
-    // ---- side drawer nav ----
-    const openNav  = () => { $('sidebar').classList.add('open'); $('navBackdrop').classList.add('open'); };
-    const closeNav = () => { $('sidebar').classList.remove('open'); $('navBackdrop').classList.remove('open'); };
-    $('navToggle').addEventListener('click', openNav);
-    $('navClose').addEventListener('click', closeNav);
-    $('navBackdrop').addEventListener('click', closeNav);
-    // ---- Settings badge: shows a count when unresolved dev errors exist ----
-    (function updateSettingsBadge() {
+    // Shared with health-log.html's error log (same sessionStorage key) —
+    // see developer.html. Runs a startup health check here (below) so
+    // schema/DB issues surface as soon as the app opens, not only once you
+    // happen to visit the specific page that triggers the broken query.
+    function updateSettingsBadge() {
       try {
         const log = JSON.parse(sessionStorage.getItem('dc_dev_errors') || '[]');
         if (!log.length) return;
@@ -297,7 +294,59 @@
           if (badge) { badge.textContent = log.length; badge.classList.remove('hidden'); }
         });
       } catch { /* sessionStorage unavailable */ }
-    })();
+    }
+    function logDevError(section, text) {
+      try {
+        const key = 'dc_dev_errors';
+        const log = JSON.parse(sessionStorage.getItem(key) || '[]');
+        const existing = log.find(e => e.page === 'Startup Check' && e.section === section && e.message === text);
+        if (existing) {
+          existing.ts = new Date().toISOString();
+          existing.count = (existing.count || 1) + 1;
+        } else {
+          log.push({ ts: new Date().toISOString(), page: 'Startup Check', section, message: text, count: 1 });
+          if (log.length > 300) log.splice(0, log.length - 300);
+        }
+        sessionStorage.setItem(key, JSON.stringify(log));
+        updateSettingsBadge();
+      } catch { /* sessionStorage unavailable */ }
+    }
+    // One cheap 1-row read per table the app relies on — catches schema
+    // drift (missing column/table) anywhere, right at app-open time.
+    const HEALTH_CHECK_TABLES = [
+      { table: 'events', columns: 'id, aspect, datetime, log_date, tz, reduction_min' },
+      { table: 'supplements', columns: 'name, dose, image_url, active, sort_order' },
+      { table: 'supplement_log', columns: 'log_date, supplement, taken, quantity' },
+      { table: 'supplement_ingredients', columns: 'supplement, ingredient, amount_value, amount_unit, amount_form, sort_order' },
+      { table: 'supplement_received', columns: 'supplement, received_date, quantity' },
+      { table: 'body_metrics', columns: 'log_date, weight_kg, height_cm' },
+      { table: 'food_items', columns: 'name, active, sort_order' },
+      { table: 'food_log', columns: 'log_date, food_item, quantity' },
+      { table: 'meal_log', columns: 'log_date, calories, protein, fat, fiber, carbs, eaten, remarks' },
+      { table: 'nutrition_targets', columns: 'effective_date, calorie_limit, protein_min, fat_limit, carb_limit, fiber_min' },
+      { table: 'daily_counts', columns: 'log_date, mstbn, fk, sn_msg, fk_msg, aop, sxcl' },
+      { table: 'money_log', columns: 'log_date, mstbn, fk, sn_msg, fk_msg, aop, sxcl, fd, alc, ub, bk_chrg, currency' },
+      { table: 'alcohol_items', columns: 'name, type, subtype, abv_percent, active, sort_order' },
+      { table: 'alcohol_log', columns: 'id, log_date, alcohol_item, shots' },
+    ];
+    async function runHealthCheck() {
+      for (const { table, columns } of HEALTH_CHECK_TABLES) {
+        try {
+          const { error } = await supabase.from(table).select(columns).limit(1);
+          if (error) logDevError('DB: ' + table, error.message);
+        } catch (e) {
+          logDevError('DB: ' + table, e.message);
+        }
+      }
+    }
+
+    // ---- side drawer nav ----
+    const openNav  = () => { $('sidebar').classList.add('open'); $('navBackdrop').classList.add('open'); };
+    const closeNav = () => { $('sidebar').classList.remove('open'); $('navBackdrop').classList.remove('open'); };
+    $('navToggle').addEventListener('click', openNav);
+    $('navClose').addEventListener('click', closeNav);
+    $('navBackdrop').addEventListener('click', closeNav);
+    updateSettingsBadge();
     document.addEventListener('keydown', e => { if (e.key === 'Escape') closeNav(); });
     // tree folder expand/collapse
     $('sidebar').addEventListener('click', e => {
@@ -385,6 +434,7 @@
         $('logoutBtn').classList.remove('hidden');
         $('navToggle').classList.remove('hidden');   // menu only when logged in
         $('whoami').textContent = session.user.email;
+        runHealthCheck();
       } else {
         hide('pickerView', 'recoveryView');
         $('loginView').classList.remove('hidden');
