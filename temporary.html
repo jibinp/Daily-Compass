@@ -240,10 +240,10 @@
     .draws-filters input { flex: 1; min-width: 130px; }
     .draws-filters input:focus, .draws-filters select:focus { outline: none; border-color: var(--accent); }
     .draws-daterange {
-      display: flex; flex-wrap: nowrap; align-items: center; gap: 6px;
-      flex: 0 0 auto;
+      display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+      flex: 1 1 auto; min-width: 0;
     }
-    .draws-daterange input[type="date"] { flex: 0 0 130px; min-width: 0; }
+    .draws-daterange input[type="date"] { flex: 1 1 110px; min-width: 0; }
     /* ---- stats tiles ---- */
     .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin-top: 12px; }
     .stat-tile {
