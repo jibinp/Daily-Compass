@@ -441,6 +441,7 @@
         <!-- ---------- LEFT: data entry ---------- -->
         <section class="col">
           <nav class="jump-tabs" aria-label="Jump to section">
+            <button type="button" class="jump-tab" data-jump="sectionSummary">📋 Summary</button>
             <button type="button" class="jump-tab" data-jump="sectionTime">☀️ Time</button>
             <button type="button" class="jump-tab" data-jump="sectionBmi">⚖️ BMI</button>
             <button type="button" class="jump-tab" data-jump="sectionFood">🍎 Food</button>
@@ -673,7 +674,7 @@
         </section>
 
         <!-- ---------- RIGHT: live analysis ---------- -->
-        <section class="col">
+        <section class="col jump-target" id="sectionSummary">
           <div class="field">
             <div class="field-head"><span class="icon">🛌</span><span class="label">Sleep last night</span></div>
             <div id="sleepLast" class="fasting-val">—</div>
