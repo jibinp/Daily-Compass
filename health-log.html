@@ -311,13 +311,14 @@
     .mini-btn.ghost { background: var(--field); color: var(--text); border: 1px solid var(--border); }
     .mini-btn.dirty { background: var(--warn); }
     .crs-form { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
-    .crs-form input, .crs-form textarea {
+    .crs-form input, .crs-form textarea, .crs-form select {
       background: var(--field); border: 1px solid var(--border);
       color: var(--text); border-radius: 8px; padding: 9px 10px;
-      font-size: 0.88rem; color-scheme: dark; width: 100%; font-family: inherit;
+      font-size: 0.88rem; color-scheme: dark; width: 100%; font-family: inherit; cursor: pointer;
     }
+    .crs-form input, .crs-form textarea { cursor: text; }
     .crs-form textarea { resize: vertical; }
-    .crs-form input:focus, .crs-form textarea:focus { outline: none; border-color: var(--accent); }
+    .crs-form input:focus, .crs-form textarea:focus, .crs-form select:focus { outline: none; border-color: var(--accent); }
     .crs-msg { font-size: 0.83rem; margin: 6px 0; min-height: 1.1em; }
     .crs-msg.ok { color: var(--ok); }
     .crs-msg.err { color: var(--err); }
@@ -571,6 +572,42 @@
               </div>
             </div>
           </div>
+
+          <div class="field">
+            <div class="field-head"><span class="icon">🍺</span><span class="label">Alcohol log</span></div>
+            <div class="muted-note">Pick a drink, set shots, tap Add. Saves with the topbar Save button — uses the date selected there.</div>
+
+            <select class="tz-select-sm" id="logAlcoholSelect" aria-label="Select drink"></select>
+            <div class="log-add-row">
+              <input type="number" step="any" id="logShots" placeholder="Shots" min="0" />
+              <button class="mini-btn" id="logAlcoholAddBtn" type="button">＋ Add</button>
+            </div>
+            <div id="logAlcoholMsg" class="crs-msg"></div>
+            <ul class="list" id="alcoholPendingList"></ul>
+
+            <div class="crs-toolbar">
+              <button class="mini-btn ghost" id="alcAddToggle">＋ Add drink</button>
+            </div>
+            <div id="alcFormMsg" class="crs-msg"></div>
+            <div id="alcForm" class="crs-form hidden">
+              <label class="muted-note" for="afName">Drink name</label>
+              <input type="text" id="afName" placeholder="e.g. Jack Daniel's" />
+              <label class="muted-note" for="afType">Type</label>
+              <select id="afType">
+                <option value="Hard Liquor">Hard Liquor</option>
+                <option value="Wine">Wine</option>
+                <option value="Beer">Beer</option>
+              </select>
+              <label class="muted-note" for="afSubtype">Subtype</label>
+              <input type="text" id="afSubtype" placeholder="e.g. Whiskey, Red, Lager" />
+              <label class="muted-note" for="afAbv">Alcohol content (% ABV)</label>
+              <input type="number" step="any" id="afAbv" placeholder="e.g. 40" />
+              <div class="btn-row">
+                <button class="mini-btn" id="afSave">Save</button>
+                <button class="mini-btn ghost" id="afCancel">Cancel</button>
+              </div>
+            </div>
+          </div>
         </section>
 
         <!-- ---------- RIGHT: live analysis ---------- -->
@@ -780,6 +817,35 @@
         }));
         const ins = await supabase.from('supplement_ingredients').insert(rows);
         if (ins.error) throw ins.error;
+      },
+      // ---- Alcohol Tracker (entry lives here, same pattern as supplements) ----
+      async activeAlcoholItems() {
+        const { data, error } = await supabase.from('alcohol_items')
+          .select('name, type, subtype, abv_percent').eq('active', true).order('sort_order', { ascending: true }).order('name', { ascending: true });
+        if (error) throw error;
+        return data;
+      },
+      async alcoholItemUpsert({ name, type, subtype, abv_percent, sort_order }) {
+        const { error } = await supabase.from('alcohol_items').upsert({
+          name, type, subtype: subtype || null, abv_percent: abv_percent ?? null, active: true, sort_order: sort_order ?? 0,
+        }, { onConflict: 'name' });
+        if (error) throw error;
+      },
+      async alcoholLogForDate(log_date) {
+        const { data, error } = await supabase.from('alcohol_log')
+          .select('alcohol_item, shots').eq('log_date', log_date);
+        if (error) throw error;
+        return data;
+      },
+      async alcoholLogSet(log_date, alcohol_item, shots) {
+        const { error } = await supabase.from('alcohol_log').upsert({
+          log_date, alcohol_item, shots: shots ?? null,
+        }, { onConflict: 'log_date,alcohol_item' });
+        if (error) throw error;
+      },
+      async alcoholLogDelete(log_date, alcohol_item) {
+        const { error } = await supabase.from('alcohol_log').delete().eq('log_date', log_date).eq('alcohol_item', alcohol_item);
+        if (error) throw error;
       },
       // ---- Weight / BMI (canonical units: kg, cm) ----
       async bodyMetricsForDate(log_date) {
@@ -1260,6 +1326,7 @@
       $('topbarLogDate').value = value;
       loadDay(value);
       loadSupplementLog(value);
+      loadAlcoholLog(value);
       loadBodyMetrics(value);
       loadFoodLog(value);
       loadMealLog(value);
@@ -1363,6 +1430,9 @@
       const suppRows = [...originalLog.entries()].map(([name, qty]) =>
         `<li><span>${name}</span><span class="when">×${qty} <button class="edit-btn" data-edit-supp="${name}" data-qty="${qty}" title="Edit">✎</button> <button class="del-btn" data-del-supp="${name}" title="Delete">✕</button></span></li>`
       );
+      const alcRows = [...originalAlcohol.entries()].map(([name, shots]) =>
+        `<li><span>${name}</span><span class="when">×${shots} <button class="edit-btn" data-edit-alc="${name}" data-shots="${shots}" title="Edit">✎</button> <button class="del-btn" data-del-alc="${name}" title="Delete">✕</button></span></li>`
+      );
       let bmiRow = '';
       if (loadedWeightKg != null && loadedHeightCm != null) {
         const wDisp = `${round1(weightFromKg(loadedWeightKg, weightUnit))} ${weightUnit}`;
@@ -1384,12 +1454,34 @@
         const eatenText = loadedMeal.eaten ? ` — ${loadedMeal.eaten}` : '';
         mealRow = `<li><span>Meal</span><span class="when">${parts}${eatenText} <button class="edit-btn" data-edit-meal title="Edit">✎</button> <button class="del-btn" data-del-meal title="Delete">✕</button></span></li>`;
       }
-      el.innerHTML = fieldRows.join('') + suppRows.join('') + bmiRow + foodRows.join('') + mealRow;
+      el.innerHTML = fieldRows.join('') + suppRows.join('') + alcRows.join('') + bmiRow + foodRows.join('') + mealRow;
       el.querySelectorAll('[data-edit-field]').forEach(btn => {
         btn.addEventListener('click', () => editTimeField(btn.dataset.editField));
       });
       el.querySelectorAll('[data-edit-supp]').forEach(btn => {
         btn.addEventListener('click', () => editSupplementEntry(btn.dataset.editSupp, btn.dataset.qty));
+      });
+      el.querySelectorAll('[data-edit-alc]').forEach(btn => {
+        btn.addEventListener('click', () => editAlcoholEntry(btn.dataset.editAlc, btn.dataset.shots));
+      });
+      el.querySelectorAll('[data-del-alc]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const ok = await confirmModal('Remove this from the log? Cannot undo.', { title: 'Delete', okText: 'Delete' });
+          if (!ok) return;
+          const name = btn.dataset.delAlc;
+          btn.disabled = true;
+          try {
+            await DB.alcoholLogDelete($('topbarLogDate').value, name);
+            originalAlcohol.delete(name);
+            pendingAlcohol.delete(name);
+            renderPendingAlcohol();
+            renderSelectedDate();
+            updateDirtyIndicator();
+          } catch (e) {
+            msg($('saveMsg'), 'Delete failed: ' + e.message, 'err');
+            btn.disabled = false;
+          }
+        });
       });
       el.querySelectorAll('[data-edit-food]').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -1682,6 +1774,123 @@
       } finally { $('sfSave').disabled = false; }
     });
 
+    // ---- Alcohol log (tied to the same log date, mirrors Supplement log) ----
+    let activeAlcoholItems = [];
+    let pendingAlcohol = new Map();
+    let originalAlcohol = new Map();
+
+    function populateLogAlcoholSelect() {
+      const sel = $('logAlcoholSelect');
+      const prev = sel.value;
+      sel.innerHTML = '<option value="">Select drink…</option>' +
+        activeAlcoholItems.map(a => `<option value="${a.name}">${a.name}</option>`).join('');
+      if (activeAlcoholItems.some(a => a.name === prev)) sel.value = prev;
+    }
+
+    function renderPendingAlcohol() {
+      const el = $('alcoholPendingList');
+      const entries = [...pendingAlcohol.entries()];
+      if (!entries.length) {
+        el.innerHTML = '<li><span class="when">Nothing logged for this date yet.</span></li>';
+        return;
+      }
+      el.innerHTML = entries.map(([name, shots]) =>
+        `<li><span>${name}</span><span class="when">×${shots} <button class="edit-btn" data-edit="${name}" data-shots="${shots}" title="Edit">✎</button> <button class="del-btn" data-remove="${name}" title="Remove">✕</button></span></li>`
+      ).join('');
+      el.querySelectorAll('[data-edit]').forEach(btn => {
+        btn.addEventListener('click', () => editAlcoholEntry(btn.dataset.edit, btn.dataset.shots));
+      });
+      el.querySelectorAll('[data-remove]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          pendingAlcohol.delete(btn.dataset.remove);
+          renderPendingAlcohol();
+          updateDirtyIndicator();
+        });
+      });
+    }
+
+    $('logAlcoholAddBtn').addEventListener('click', () => {
+      const name = $('logAlcoholSelect').value;
+      const shots = $('logShots').value ? parseFloat($('logShots').value) : null;
+      if (!name) { msg($('logAlcoholMsg'), 'Select a drink first.', 'err'); return; }
+      if (!shots || shots <= 0) { msg($('logAlcoholMsg'), 'Enter shots.', 'err'); return; }
+      pendingAlcohol.set(name, shots);
+      renderPendingAlcohol();
+      updateDirtyIndicator();
+      $('logShots').value = '';
+      msg($('logAlcoholMsg'), '', '');
+    });
+
+    // Pre-fill the Alcohol log dropdown+shots with an entry so it can be
+    // adjusted and re-added (re-adding the same drink overwrites its shots).
+    function editAlcoholEntry(name, shots) {
+      $('logAlcoholSelect').value = name;
+      $('logShots').value = shots;
+      $('logAlcoholSelect').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      $('logShots').focus();
+    }
+
+    async function loadAlcoholLog(logDate) {
+      const el = $('alcoholPendingList');
+      pendingAlcohol = new Map();
+      originalAlcohol = new Map();
+      if (!logDate) { renderPendingAlcohol(); renderSelectedDate(); updateDirtyIndicator(); return; }
+      try {
+        if (!activeAlcoholItems.length) activeAlcoholItems = await DB.activeAlcoholItems();
+        populateLogAlcoholSelect();
+        if (!activeAlcoholItems.length) {
+          el.innerHTML = '<li><span class="when">No active drinks — click "+ Add drink" below.</span></li>';
+          renderSelectedDate();
+          updateDirtyIndicator();
+          return;
+        }
+        const rows = await DB.alcoholLogForDate(logDate);
+        for (const r of rows) {
+          if (r.shots != null) {
+            pendingAlcohol.set(r.alcohol_item, r.shots);
+            originalAlcohol.set(r.alcohol_item, r.shots);
+          }
+        }
+        renderPendingAlcohol();
+        renderSelectedDate();
+        updateDirtyIndicator();
+      } catch (e) {
+        el.innerHTML = '<li><span class="when">Could not load: ' + e.message + '</span></li>';
+      }
+    }
+
+    function alcFormMsg(text, kind) {
+      const el = $('alcFormMsg'); el.textContent = text || '';
+      el.className = 'crs-msg' + (kind ? ' ' + kind : '');
+    }
+    $('alcAddToggle').addEventListener('click', () => {
+      $('alcForm').classList.toggle('hidden');
+      if (!$('alcForm').classList.contains('hidden')) {
+        $('afName').value = ''; $('afType').value = 'Hard Liquor'; $('afSubtype').value = ''; $('afAbv').value = '';
+        alcFormMsg('', ''); $('afName').focus();
+      }
+    });
+    $('afCancel').addEventListener('click', () => $('alcForm').classList.add('hidden'));
+    $('afSave').addEventListener('click', async () => {
+      const name = $('afName').value.trim();
+      if (!name) { alcFormMsg('Drink name is required.', 'err'); return; }
+      $('afSave').disabled = true;
+      alcFormMsg('Saving…', '');
+      try {
+        await DB.alcoholItemUpsert({
+          name, type: $('afType').value, subtype: $('afSubtype').value.trim(),
+          abv_percent: $('afAbv').value ? parseFloat($('afAbv').value) : null,
+          sort_order: activeAlcoholItems.length,
+        });
+        activeAlcoholItems = await DB.activeAlcoholItems();   // refetch so the new one shows up
+        populateLogAlcoholSelect();
+        $('alcForm').classList.add('hidden');
+        alcFormMsg('', '');
+      } catch (e) {
+        alcFormMsg('Save failed: ' + (e.message || ''), 'err');
+      } finally { $('afSave').disabled = false; }
+    });
+
     $('topbarLogDate').addEventListener('change', () => goToDate($('topbarLogDate').value));
     $('topbarTodayBtn').addEventListener('click', () => goToDate(todayDate()));
 
@@ -1717,6 +1926,10 @@
       // all). Compare the two maps directly instead.
       const logChanged = pendingLog.size !== originalLog.size ||
         [...pendingLog.entries()].some(([name, qty]) => originalLog.get(name) !== qty);
+      const alcoholToUpsert = [...pendingAlcohol.entries()];
+      const alcoholToClear = [...originalAlcohol.keys()].filter(name => !pendingAlcohol.has(name));
+      const alcoholChanged = pendingAlcohol.size !== originalAlcohol.size ||
+        [...pendingAlcohol.entries()].some(([name, shots]) => originalAlcohol.get(name) !== shots);
       const weightRaw = parseFloat($('weightInput').value);
       const heightRaw = parseFloat($('heightInput').value);
       const bmiWeightKg = isNaN(weightRaw) ? null : round1(weightToKg(weightRaw, weightUnit));
@@ -1744,8 +1957,8 @@
       const mealChanged = MEAL_FIELDS.concat(['eaten', 'remarks']).some(
         f => (mealFields[f] ?? null) !== (loadedMeal[f] ?? null)
       );
-      const dirty = toSave.length > 0 || logChanged || bmiChanged || foodChanged || mealChanged;
-      return { filled, toSave, logToUpsert, logToClear, bmiWeightKg, bmiHeightCm, bmiChanged, foodToSet, foodToClear, foodChanged, mealFields, mealChanged, dirty };
+      const dirty = toSave.length > 0 || logChanged || alcoholChanged || bmiChanged || foodChanged || mealChanged;
+      return { filled, toSave, logToUpsert, logToClear, alcoholToUpsert, alcoholToClear, bmiWeightKg, bmiHeightCm, bmiChanged, foodToSet, foodToClear, foodChanged, mealFields, mealChanged, dirty };
     }
     // Reflects unsaved changes on the topbar Save button (label + color).
     function updateDirtyIndicator() {
@@ -1762,12 +1975,12 @@
     $('saveBtn').addEventListener('click', async () => {
       const logDate = $('topbarLogDate').value;         // the log day (YYYY-MM-DD)
       if (!logDate) { msg($('saveMsg'), 'Pick the log date at top.', 'err'); return; }
-      const { filled, toSave, logToUpsert, logToClear, bmiWeightKg, bmiHeightCm, bmiChanged, foodToSet, foodToClear, foodChanged, mealFields, mealChanged } = getPendingChanges();
+      const { filled, toSave, logToUpsert, logToClear, alcoholToUpsert, alcoholToClear, bmiWeightKg, bmiHeightCm, bmiChanged, foodToSet, foodToClear, foodChanged, mealFields, mealChanged } = getPendingChanges();
 
-      if (!filled.length && !logToUpsert.length && !logToClear.length && !bmiChanged && !foodChanged && !mealChanged) {
+      if (!filled.length && !logToUpsert.length && !logToClear.length && !alcoholToUpsert.length && !alcoholToClear.length && !bmiChanged && !foodChanged && !mealChanged) {
         msg($('saveMsg'), 'Fill at least one field or add a tablet to the log.', 'err'); return;
       }
-      if (!toSave.length && !logToUpsert.length && !logToClear.length && !bmiChanged && !foodChanged && !mealChanged) {
+      if (!toSave.length && !logToUpsert.length && !logToClear.length && !alcoholToUpsert.length && !alcoholToClear.length && !bmiChanged && !foodChanged && !mealChanged) {
         msg($('saveMsg'), 'No changes to save.', ''); return;
       }
 
@@ -1810,6 +2023,14 @@
         }
         if (logToUpsert.length || logToClear.length) originalLog = new Map(pendingLog);
 
+        for (const [name, shots] of alcoholToUpsert) {
+          await DB.alcoholLogSet(logDate, name, shots);
+        }
+        for (const name of alcoholToClear) {
+          await DB.alcoholLogDelete(logDate, name);
+        }
+        if (alcoholToUpsert.length || alcoholToClear.length) originalAlcohol = new Map(pendingAlcohol);
+
         if (bmiChanged) {
           if (bmiWeightKg == null && bmiHeightCm == null) {
             await DB.bodyMetricsDelete(logDate);
@@ -1840,7 +2061,8 @@
           }
         }
 
-        const savedCount = plan.length + logToUpsert.length + logToClear.length + (bmiChanged ? 1 : 0)
+        const savedCount = plan.length + logToUpsert.length + logToClear.length
+          + alcoholToUpsert.length + alcoholToClear.length + (bmiChanged ? 1 : 0)
           + foodToSet.length + foodToClear.length + (mealChanged ? 1 : 0);
         msg($('saveMsg'), `Saved ${savedCount} entr${savedCount === 1 ? 'y' : 'ies'}.`, 'ok');
         FIELDS.forEach(f => { $(f.id).value = ''; });
@@ -1917,6 +2139,7 @@
       try {
         await loadDay($('topbarLogDate').value);
         await loadSupplementLog($('topbarLogDate').value);
+        await loadAlcoholLog($('topbarLogDate').value);
         await loadBodyMetrics($('topbarLogDate').value);
         await loadFoodLog($('topbarLogDate').value);
         await loadMealLog($('topbarLogDate').value);
@@ -1940,6 +2163,7 @@
       if (!$('topbarLogDate').value) $('topbarLogDate').value = todayDate();
       await loadDay($('topbarLogDate').value);
       await loadSupplementLog($('topbarLogDate').value);
+      await loadAlcoholLog($('topbarLogDate').value);
       await loadBodyMetrics($('topbarLogDate').value);
       await loadFoodLog($('topbarLogDate').value);
       await loadMealLog($('topbarLogDate').value);
