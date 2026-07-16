@@ -273,7 +273,7 @@
     // cache-busting query string) so this always reflects what's actually
     // deployed right now, regardless of what the browser/home-screen app
     // has cached for the page you're looking at.
-    const DEPLOY_CHECK_FILES = ['developer.html', 'health-log.html'];
+    const DEPLOY_CHECK_FILES = ['developer.html', 'health-log.html', 'index.html', 'all-data.html', 'supplement-tracker.html', 'temporary.html'];
     async function checkDeployVersion() {
       const el = $('deployInfo');
       el.innerHTML = DEPLOY_CHECK_FILES.map(f =>
