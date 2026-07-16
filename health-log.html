@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Data Entry — Daily Compass</title>
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" href="icons/icon-192.png" />
@@ -244,7 +244,7 @@
       width: 100%;
       display: flex; justify-content: space-between; align-items: center;
       font-size: 0.85rem; color: var(--muted);
-      padding: 12px 20px; border-bottom: 1px solid var(--border);
+      padding: calc(12px + env(safe-area-inset-top)) 20px 12px; border-bottom: 1px solid var(--border);
       background: var(--bg);
     }
     .topbar-title { font-weight: 700; font-size: 1rem; color: var(--text); }
