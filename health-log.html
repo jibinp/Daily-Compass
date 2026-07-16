@@ -540,7 +540,7 @@
 
           <div class="field">
             <div class="field-head"><span class="icon">📊</span><span class="label">Mstbn</span></div>
-            <div class="muted-note">Counts save with the topbar Save button. Money entries save immediately.</div>
+            <div class="muted-note">One entry per day. Saves with the topbar Save button.</div>
             <div class="macro-grid">
               <div><label class="muted-note" for="dcMstbn">Mstbn</label><input type="number" step="any" id="dcMstbn" placeholder="0" /></div>
               <div><label class="muted-note" for="dcFk">Fk</label><input type="number" step="any" id="dcFk" placeholder="0" /></div>
@@ -550,15 +550,22 @@
               <div><label class="muted-note" for="dcSxCl">sxCl</label><input type="number" step="any" id="dcSxCl" placeholder="0" /></div>
             </div>
 
-            <select class="tz-select-sm" id="moneyCategorySelect" aria-label="Category"></select>
-            <div class="log-add-row">
-              <input type="number" step="any" id="moneyAmount" placeholder="Amount" />
-              <input type="text" id="moneyCurrency" placeholder="Currency" list="currencyList" style="flex:0 0 90px;" />
-              <datalist id="currencyList"><option value="CAD"></option><option value="INR"></option><option value="USD"></option></datalist>
-              <button class="mini-btn" id="moneyAddBtn" type="button">＋ Add</button>
+            <label class="muted-note">Money</label>
+            <div class="macro-grid">
+              <div><label class="muted-note" for="mnMstbn">Mstbn</label><input type="number" step="any" id="mnMstbn" placeholder="0" /></div>
+              <div><label class="muted-note" for="mnFk">Fk</label><input type="number" step="any" id="mnFk" placeholder="0" /></div>
+              <div><label class="muted-note" for="mnSnMsg">Sn Msg</label><input type="number" step="any" id="mnSnMsg" placeholder="0" /></div>
+              <div><label class="muted-note" for="mnFkMsg">Fk Msg</label><input type="number" step="any" id="mnFkMsg" placeholder="0" /></div>
+              <div><label class="muted-note" for="mnAoP">AoP</label><input type="number" step="any" id="mnAoP" placeholder="0" /></div>
+              <div><label class="muted-note" for="mnSxCl">sxCl</label><input type="number" step="any" id="mnSxCl" placeholder="0" /></div>
+              <div><label class="muted-note" for="mnFd">Fd</label><input type="number" step="any" id="mnFd" placeholder="0" /></div>
+              <div><label class="muted-note" for="mnAlc">Alc</label><input type="number" step="any" id="mnAlc" placeholder="0" /></div>
+              <div><label class="muted-note" for="mnUb">Ub</label><input type="number" step="any" id="mnUb" placeholder="0" /></div>
+              <div><label class="muted-note" for="mnBkChrg">BkChrg</label><input type="number" step="any" id="mnBkChrg" placeholder="0" /></div>
             </div>
-            <div id="moneyMsg" class="crs-msg"></div>
-            <ul class="list" id="moneyList"></ul>
+            <label class="muted-note" for="mnCurrency">Currency</label>
+            <input type="text" id="mnCurrency" placeholder="e.g. CAD" list="currencyList" />
+            <datalist id="currencyList"><option value="CAD"></option><option value="INR"></option><option value="USD"></option></datalist>
           </div>
 
           <div class="field">
@@ -854,20 +861,19 @@
         }, { onConflict: 'name' });
         if (error) throw error;
       },
+      // Transactional — a day can have multiple entries, even for the same drink.
       async alcoholLogForDate(log_date) {
         const { data, error } = await supabase.from('alcohol_log')
-          .select('alcohol_item, shots').eq('log_date', log_date);
+          .select('id, alcohol_item, shots').eq('log_date', log_date).order('id', { ascending: true });
         if (error) throw error;
         return data;
       },
-      async alcoholLogSet(log_date, alcohol_item, shots) {
-        const { error } = await supabase.from('alcohol_log').upsert({
-          log_date, alcohol_item, shots: shots ?? null,
-        }, { onConflict: 'log_date,alcohol_item' });
+      async alcoholLogAdd(log_date, alcohol_item, shots) {
+        const { error } = await supabase.from('alcohol_log').insert({ log_date, alcohol_item, shots });
         if (error) throw error;
       },
-      async alcoholLogDelete(log_date, alcohol_item) {
-        const { error } = await supabase.from('alcohol_log').delete().eq('log_date', log_date).eq('alcohol_item', alcohol_item);
+      async alcoholLogDelete(id) {
+        const { error } = await supabase.from('alcohol_log').delete().eq('id', id);
         if (error) throw error;
       },
       // ---- Weight / BMI (canonical units: kg, cm) ----
@@ -966,25 +972,19 @@
         const { error } = await supabase.from('daily_counts').delete().eq('log_date', log_date);
         if (error) throw error;
       },
-      // ---- Money Log (transactional entries, each with its own currency) ----
-      async activeExpenseCategories() {
-        const { data, error } = await supabase.from('expense_categories')
-          .select('name').eq('active', true).order('sort_order', { ascending: true }).order('name', { ascending: true });
-        if (error) throw error;
-        return data;
-      },
+      // ---- Money Log (one row per day, fixed amount-per-category fields) ----
       async moneyLogForDate(log_date) {
         const { data, error } = await supabase.from('money_log')
-          .select('id, category, amount, currency').eq('log_date', log_date).order('id', { ascending: true });
+          .select('mstbn, fk, sn_msg, fk_msg, aop, sxcl, fd, alc, ub, bk_chrg, currency').eq('log_date', log_date).maybeSingle();
         if (error) throw error;
         return data;
       },
-      async moneyLogAdd(log_date, category, amount, currency) {
-        const { error } = await supabase.from('money_log').insert({ log_date, category, amount, currency });
+      async moneyLogSet(log_date, fields) {
+        const { error } = await supabase.from('money_log').upsert({ log_date, ...fields }, { onConflict: 'log_date' });
         if (error) throw error;
       },
-      async moneyLogDelete(id) {
-        const { error } = await supabase.from('money_log').delete().eq('id', id);
+      async moneyLogDelete(log_date) {
+        const { error } = await supabase.from('money_log').delete().eq('log_date', log_date);
         if (error) throw error;
       },
     };
@@ -1356,77 +1356,44 @@
     }
 
     // ================================================================
-    // Money Log — transactional entries (category + amount + currency),
-    // each with its own currency. Saves immediately, not staged with the
-    // topbar Save button (unlike the other sections on this page).
+    // Money Log — one row per day, fixed amount-per-category fields +
+    // one currency for the day. Same shape/staging as Daily Counts.
     // ================================================================
-    let expenseCategories = [];
-    let moneyEntries = [];   // this date's entries: [{ id, category, amount, currency }]
+    const MONEY_FIELDS = [
+      { key: 'mstbn', id: 'mnMstbn', label: 'Mstbn' }, { key: 'fk', id: 'mnFk', label: 'Fk' },
+      { key: 'sn_msg', id: 'mnSnMsg', label: 'Sn Msg' }, { key: 'fk_msg', id: 'mnFkMsg', label: 'Fk Msg' },
+      { key: 'aop', id: 'mnAoP', label: 'AoP' }, { key: 'sxcl', id: 'mnSxCl', label: 'sxCl' },
+      { key: 'fd', id: 'mnFd', label: 'Fd' }, { key: 'alc', id: 'mnAlc', label: 'Alc' },
+      { key: 'ub', id: 'mnUb', label: 'Ub' }, { key: 'bk_chrg', id: 'mnBkChrg', label: 'BkChrg' },
+    ];
+    let loadedMoney = {};   // { mstbn, ..., bk_chrg, currency } as loaded, or {}
 
-    function populateMoneyCategorySelect() {
-      const sel = $('moneyCategorySelect');
-      const prev = sel.value;
-      sel.innerHTML = '<option value="">Select category…</option>' +
-        expenseCategories.map(c => `<option value="${c.name}">${c.name}</option>`).join('');
-      if (expenseCategories.some(c => c.name === prev)) sel.value = prev;
+    function moneyInputs() {
+      const v = {};
+      MONEY_FIELDS.forEach(f => { v[f.key] = $(f.id).value; });
+      v.currency = $('mnCurrency').value.trim();
+      return v;
     }
-
-    function renderMoneyList() {
-      const el = $('moneyList');
-      if (!moneyEntries.length) {
-        el.innerHTML = '<li><span class="when">Nothing logged for this date yet.</span></li>';
-        return;
-      }
-      el.innerHTML = moneyEntries.map(m =>
-        `<li><span>${m.category}</span><span class="when">${m.amount} ${m.currency} <button class="del-btn" data-remove-money="${m.id}" title="Remove">✕</button></span></li>`
-      ).join('');
-      el.querySelectorAll('[data-remove-money]').forEach(btn => {
-        btn.addEventListener('click', async () => {
-          btn.disabled = true;
-          try {
-            await DB.moneyLogDelete(btn.dataset.removeMoney);
-            await loadMoneyLog($('topbarLogDate').value);
-          } catch (e) {
-            msg($('moneyMsg'), 'Delete failed: ' + e.message, 'err');
-            btn.disabled = false;
-          }
-        });
-      });
-    }
+    MONEY_FIELDS.forEach(f => $(f.id).addEventListener('input', updateDirtyIndicator));
+    $('mnCurrency').addEventListener('input', updateDirtyIndicator);
 
     async function loadMoneyLog(logDate) {
-      moneyEntries = [];
-      if (!expenseCategories.length) expenseCategories = await DB.activeExpenseCategories().catch(() => []);
-      populateMoneyCategorySelect();
-      if (!logDate) { renderMoneyList(); renderSelectedDate(); return; }
+      MONEY_FIELDS.forEach(f => { $(f.id).value = ''; });
+      $('mnCurrency').value = '';
+      loadedMoney = {};
+      if (!logDate) { updateDirtyIndicator(); return; }
       try {
-        moneyEntries = await DB.moneyLogForDate(logDate);
-        renderMoneyList();
-        renderSelectedDate();
+        const row = await DB.moneyLogForDate(logDate);
+        if (row) {
+          loadedMoney = row;
+          MONEY_FIELDS.forEach(f => { if (row[f.key] != null) $(f.id).value = row[f.key]; });
+          $('mnCurrency').value = row.currency || '';
+        }
+        updateDirtyIndicator();
       } catch (e) {
-        $('moneyList').innerHTML = '<li><span class="when">Could not load: ' + e.message + '</span></li>';
+        msg($('saveMsg'), 'Could not load money log: ' + e.message, 'err');
       }
     }
-
-    $('moneyAddBtn').addEventListener('click', async () => {
-      const logDate = $('topbarLogDate').value;
-      const category = $('moneyCategorySelect').value;
-      const amount = $('moneyAmount').value ? parseFloat($('moneyAmount').value) : null;
-      const currency = $('moneyCurrency').value.trim();
-      if (!logDate) { msg($('moneyMsg'), 'Pick the log date at top.', 'err'); return; }
-      if (!category) { msg($('moneyMsg'), 'Select a category first.', 'err'); return; }
-      if (!amount || amount <= 0) { msg($('moneyMsg'), 'Enter an amount.', 'err'); return; }
-      if (!currency) { msg($('moneyMsg'), 'Enter a currency.', 'err'); return; }
-      $('moneyAddBtn').disabled = true;
-      try {
-        await DB.moneyLogAdd(logDate, category, amount, currency);
-        await loadMoneyLog(logDate);
-        $('moneyAmount').value = ''; $('moneyCurrency').value = '';
-        msg($('moneyMsg'), '', '');
-      } catch (e) {
-        msg($('moneyMsg'), 'Save failed: ' + (e.message || ''), 'err');
-      } finally { $('moneyAddBtn').disabled = false; }
-    });
 
     function targetsFormMsg(text, kind) {
       const el = $('targetsFormMsg'); el.textContent = text || '';
@@ -1597,8 +1564,8 @@
       const suppRows = [...originalLog.entries()].map(([name, qty]) =>
         `<li><span>${name}</span><span class="when">×${qty} <button class="edit-btn" data-edit-supp="${name}" data-qty="${qty}" title="Edit">✎</button> <button class="del-btn" data-del-supp="${name}" title="Delete">✕</button></span></li>`
       );
-      const alcRows = [...originalAlcohol.entries()].map(([name, shots]) =>
-        `<li><span>${name}</span><span class="when">×${shots} <button class="edit-btn" data-edit-alc="${name}" data-shots="${shots}" title="Edit">✎</button> <button class="del-btn" data-del-alc="${name}" title="Delete">✕</button></span></li>`
+      const alcRows = alcoholEntries.map(a =>
+        `<li><span>${a.alcohol_item}</span><span class="when">×${a.shots} <button class="del-btn" data-del-alc="${a.id}" title="Delete">✕</button></span></li>`
       );
       let bmiRow = '';
       if (loadedWeightKg != null && loadedHeightCm != null) {
@@ -1627,32 +1594,28 @@
         const parts = DC_FIELDS.filter(f => loadedCounts[f.key] != null).map(f => `${f.label} ${loadedCounts[f.key]}`).join(', ');
         countsRow = `<li><span>Mstbn</span><span class="when">${parts} <button class="edit-btn" data-edit-counts title="Edit">✎</button> <button class="del-btn" data-del-counts title="Delete">✕</button></span></li>`;
       }
-      const moneyRows = moneyEntries.map(m =>
-        `<li><span>${m.category}</span><span class="when">${m.amount} ${m.currency} <button class="del-btn" data-del-money="${m.id}" title="Delete">✕</button></span></li>`
-      );
-      el.innerHTML = fieldRows.join('') + suppRows.join('') + alcRows.join('') + bmiRow + foodRows.join('') + mealRow + countsRow + moneyRows.join('');
+      let moneyRow = '';
+      const hasMoney = MONEY_FIELDS.some(f => loadedMoney[f.key] != null);
+      if (hasMoney) {
+        const parts = MONEY_FIELDS.filter(f => loadedMoney[f.key] != null).map(f => `${f.label} ${loadedMoney[f.key]}`).join(', ');
+        const currText = loadedMoney.currency ? ` (${loadedMoney.currency})` : '';
+        moneyRow = `<li><span>Money</span><span class="when">${parts}${currText} <button class="edit-btn" data-edit-money title="Edit">✎</button> <button class="del-btn" data-del-money title="Delete">✕</button></span></li>`;
+      }
+      el.innerHTML = fieldRows.join('') + suppRows.join('') + alcRows.join('') + bmiRow + foodRows.join('') + mealRow + countsRow + moneyRow;
       el.querySelectorAll('[data-edit-field]').forEach(btn => {
         btn.addEventListener('click', () => editTimeField(btn.dataset.editField));
       });
       el.querySelectorAll('[data-edit-supp]').forEach(btn => {
         btn.addEventListener('click', () => editSupplementEntry(btn.dataset.editSupp, btn.dataset.qty));
       });
-      el.querySelectorAll('[data-edit-alc]').forEach(btn => {
-        btn.addEventListener('click', () => editAlcoholEntry(btn.dataset.editAlc, btn.dataset.shots));
-      });
       el.querySelectorAll('[data-del-alc]').forEach(btn => {
         btn.addEventListener('click', async () => {
           const ok = await confirmModal('Remove this from the log? Cannot undo.', { title: 'Delete', okText: 'Delete' });
           if (!ok) return;
-          const name = btn.dataset.delAlc;
           btn.disabled = true;
           try {
-            await DB.alcoholLogDelete($('topbarLogDate').value, name);
-            originalAlcohol.delete(name);
-            pendingAlcohol.delete(name);
-            renderPendingAlcohol();
-            renderSelectedDate();
-            updateDirtyIndicator();
+            await DB.alcoholLogDelete(btn.dataset.delAlc);
+            await loadAlcoholLog($('topbarLogDate').value);
           } catch (e) {
             msg($('saveMsg'), 'Delete failed: ' + e.message, 'err');
             btn.disabled = false;
@@ -1740,19 +1703,24 @@
           delCountsBtn.disabled = false;
         }
       });
-      el.querySelectorAll('[data-del-money]').forEach(btn => {
-        btn.addEventListener('click', async () => {
-          const ok = await confirmModal('Delete this money entry? Cannot undo.', { title: 'Delete', okText: 'Delete' });
-          if (!ok) return;
-          btn.disabled = true;
-          try {
-            await DB.moneyLogDelete(btn.dataset.delMoney);
-            await loadMoneyLog($('topbarLogDate').value);
-          } catch (e) {
-            msg($('saveMsg'), 'Delete failed: ' + e.message, 'err');
-            btn.disabled = false;
-          }
-        });
+      const editMoneyBtn = el.querySelector('[data-edit-money]');
+      if (editMoneyBtn) editMoneyBtn.addEventListener('click', () => {
+        $('mnMstbn').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        $('mnMstbn').focus();
+      });
+      const delMoneyBtn = el.querySelector('[data-del-money]');
+      if (delMoneyBtn) delMoneyBtn.addEventListener('click', async () => {
+        const ok = await confirmModal('Delete money log for this date? Cannot undo.', { title: 'Delete', okText: 'Delete' });
+        if (!ok) return;
+        delMoneyBtn.disabled = true;
+        try {
+          await DB.moneyLogDelete($('topbarLogDate').value);
+          await loadMoneyLog($('topbarLogDate').value);
+          renderSelectedDate();
+        } catch (e) {
+          msg($('saveMsg'), 'Delete failed: ' + e.message, 'err');
+          delMoneyBtn.disabled = false;
+        }
       });
       el.querySelectorAll('[data-del]').forEach(btn => {
         btn.addEventListener('click', async () => {
@@ -1983,10 +1951,11 @@
       } finally { $('sfSave').disabled = false; }
     });
 
-    // ---- Alcohol log (tied to the same log date, mirrors Supplement log) ----
+    // ---- Alcohol log (tied to the same log date). Transactional — a day
+    // can have multiple entries, even for the same drink — so each Add
+    // saves immediately (own id), not staged with the topbar Save button.
     let activeAlcoholItems = [];
-    let pendingAlcohol = new Map();
-    let originalAlcohol = new Map();
+    let alcoholEntries = [];   // this date's entries: [{ id, alcohol_item, shots }]
 
     function populateLogAlcoholSelect() {
       const sel = $('logAlcoholSelect');
@@ -1998,71 +1967,60 @@
 
     function renderPendingAlcohol() {
       const el = $('alcoholPendingList');
-      const entries = [...pendingAlcohol.entries()];
-      if (!entries.length) {
+      if (!alcoholEntries.length) {
         el.innerHTML = '<li><span class="when">Nothing logged for this date yet.</span></li>';
         return;
       }
-      el.innerHTML = entries.map(([name, shots]) =>
-        `<li><span>${name}</span><span class="when">×${shots} <button class="edit-btn" data-edit="${name}" data-shots="${shots}" title="Edit">✎</button> <button class="del-btn" data-remove="${name}" title="Remove">✕</button></span></li>`
+      el.innerHTML = alcoholEntries.map(a =>
+        `<li><span>${a.alcohol_item}</span><span class="when">×${a.shots} <button class="del-btn" data-remove="${a.id}" title="Remove">✕</button></span></li>`
       ).join('');
-      el.querySelectorAll('[data-edit]').forEach(btn => {
-        btn.addEventListener('click', () => editAlcoholEntry(btn.dataset.edit, btn.dataset.shots));
-      });
       el.querySelectorAll('[data-remove]').forEach(btn => {
-        btn.addEventListener('click', () => {
-          pendingAlcohol.delete(btn.dataset.remove);
-          renderPendingAlcohol();
-          updateDirtyIndicator();
+        btn.addEventListener('click', async () => {
+          btn.disabled = true;
+          try {
+            await DB.alcoholLogDelete(btn.dataset.remove);
+            await loadAlcoholLog($('topbarLogDate').value);
+          } catch (e) {
+            msg($('logAlcoholMsg'), 'Delete failed: ' + e.message, 'err');
+            btn.disabled = false;
+          }
         });
       });
     }
 
-    $('logAlcoholAddBtn').addEventListener('click', () => {
+    $('logAlcoholAddBtn').addEventListener('click', async () => {
+      const logDate = $('topbarLogDate').value;
       const name = $('logAlcoholSelect').value;
       const shots = $('logShots').value ? parseFloat($('logShots').value) : null;
+      if (!logDate) { msg($('logAlcoholMsg'), 'Pick the log date at top.', 'err'); return; }
       if (!name) { msg($('logAlcoholMsg'), 'Select a drink first.', 'err'); return; }
       if (!shots || shots <= 0) { msg($('logAlcoholMsg'), 'Enter shots.', 'err'); return; }
-      pendingAlcohol.set(name, shots);
-      renderPendingAlcohol();
-      updateDirtyIndicator();
-      $('logShots').value = '';
-      msg($('logAlcoholMsg'), '', '');
+      $('logAlcoholAddBtn').disabled = true;
+      try {
+        await DB.alcoholLogAdd(logDate, name, shots);
+        await loadAlcoholLog(logDate);
+        $('logShots').value = '';
+        msg($('logAlcoholMsg'), '', '');
+      } catch (e) {
+        msg($('logAlcoholMsg'), 'Save failed: ' + (e.message || ''), 'err');
+      } finally { $('logAlcoholAddBtn').disabled = false; }
     });
-
-    // Pre-fill the Alcohol log dropdown+shots with an entry so it can be
-    // adjusted and re-added (re-adding the same drink overwrites its shots).
-    function editAlcoholEntry(name, shots) {
-      $('logAlcoholSelect').value = name;
-      $('logShots').value = shots;
-      $('logAlcoholSelect').scrollIntoView({ behavior: 'smooth', block: 'center' });
-      $('logShots').focus();
-    }
 
     async function loadAlcoholLog(logDate) {
       const el = $('alcoholPendingList');
-      pendingAlcohol = new Map();
-      originalAlcohol = new Map();
-      if (!logDate) { renderPendingAlcohol(); renderSelectedDate(); updateDirtyIndicator(); return; }
+      alcoholEntries = [];
+      if (!activeAlcoholItems.length) activeAlcoholItems = await DB.activeAlcoholItems().catch(() => []);
+      populateLogAlcoholSelect();
+      if (!logDate) { renderPendingAlcohol(); renderSelectedDate(); return; }
+      if (!activeAlcoholItems.length) {
+        el.innerHTML = '<li><span class="when">No active drinks — click "+ Add drink" below.</span></li>';
+        renderSelectedDate();
+        return;
+      }
       try {
-        if (!activeAlcoholItems.length) activeAlcoholItems = await DB.activeAlcoholItems();
-        populateLogAlcoholSelect();
-        if (!activeAlcoholItems.length) {
-          el.innerHTML = '<li><span class="when">No active drinks — click "+ Add drink" below.</span></li>';
-          renderSelectedDate();
-          updateDirtyIndicator();
-          return;
-        }
-        const rows = await DB.alcoholLogForDate(logDate);
-        for (const r of rows) {
-          if (r.shots != null) {
-            pendingAlcohol.set(r.alcohol_item, r.shots);
-            originalAlcohol.set(r.alcohol_item, r.shots);
-          }
-        }
+        alcoholEntries = await DB.alcoholLogForDate(logDate);
         renderPendingAlcohol();
         renderSelectedDate();
-        updateDirtyIndicator();
       } catch (e) {
         el.innerHTML = '<li><span class="when">Could not load: ' + e.message + '</span></li>';
       }
@@ -2135,10 +2093,6 @@
       // all). Compare the two maps directly instead.
       const logChanged = pendingLog.size !== originalLog.size ||
         [...pendingLog.entries()].some(([name, qty]) => originalLog.get(name) !== qty);
-      const alcoholToUpsert = [...pendingAlcohol.entries()];
-      const alcoholToClear = [...originalAlcohol.keys()].filter(name => !pendingAlcohol.has(name));
-      const alcoholChanged = pendingAlcohol.size !== originalAlcohol.size ||
-        [...pendingAlcohol.entries()].some(([name, shots]) => originalAlcohol.get(name) !== shots);
       const weightRaw = parseFloat($('weightInput').value);
       const heightRaw = parseFloat($('heightInput').value);
       const bmiWeightKg = isNaN(weightRaw) ? null : round1(weightToKg(weightRaw, weightUnit));
@@ -2171,8 +2125,16 @@
       const countsFields = {};
       DC_FIELDS.forEach(f => { countsFields[f.key] = countsVals[f.key] === '' ? null : parseFloat(countsVals[f.key]); });
       const countsChanged = DC_FIELDS.some(f => (countsFields[f.key] ?? null) !== (loadedCounts[f.key] ?? null));
-      const dirty = toSave.length > 0 || logChanged || alcoholChanged || bmiChanged || foodChanged || mealChanged || countsChanged;
-      return { filled, toSave, logToUpsert, logToClear, alcoholToUpsert, alcoholToClear, bmiWeightKg, bmiHeightCm, bmiChanged, foodToSet, foodToClear, foodChanged, mealFields, mealChanged, countsFields, countsChanged, dirty };
+      // Money Log: one row per date, diffed as a whole against loadedMoney.
+      const moneyVals = moneyInputs();
+      const moneyFields = {};
+      MONEY_FIELDS.forEach(f => { moneyFields[f.key] = moneyVals[f.key] === '' ? null : parseFloat(moneyVals[f.key]); });
+      moneyFields.currency = moneyVals.currency || null;
+      const moneyChanged = MONEY_FIELDS.map(f => f.key).concat(['currency']).some(
+        k => (moneyFields[k] ?? null) !== (loadedMoney[k] ?? null)
+      );
+      const dirty = toSave.length > 0 || logChanged || bmiChanged || foodChanged || mealChanged || countsChanged || moneyChanged;
+      return { filled, toSave, logToUpsert, logToClear, bmiWeightKg, bmiHeightCm, bmiChanged, foodToSet, foodToClear, foodChanged, mealFields, mealChanged, countsFields, countsChanged, moneyFields, moneyChanged, dirty };
     }
     // Reflects unsaved changes on the topbar Save button (label + color).
     function updateDirtyIndicator() {
@@ -2189,12 +2151,12 @@
     $('saveBtn').addEventListener('click', async () => {
       const logDate = $('topbarLogDate').value;         // the log day (YYYY-MM-DD)
       if (!logDate) { msg($('saveMsg'), 'Pick the log date at top.', 'err'); return; }
-      const { filled, toSave, logToUpsert, logToClear, alcoholToUpsert, alcoholToClear, bmiWeightKg, bmiHeightCm, bmiChanged, foodToSet, foodToClear, foodChanged, mealFields, mealChanged, countsFields, countsChanged } = getPendingChanges();
+      const { filled, toSave, logToUpsert, logToClear, bmiWeightKg, bmiHeightCm, bmiChanged, foodToSet, foodToClear, foodChanged, mealFields, mealChanged, countsFields, countsChanged, moneyFields, moneyChanged } = getPendingChanges();
 
-      if (!filled.length && !logToUpsert.length && !logToClear.length && !alcoholToUpsert.length && !alcoholToClear.length && !bmiChanged && !foodChanged && !mealChanged && !countsChanged) {
+      if (!filled.length && !logToUpsert.length && !logToClear.length && !bmiChanged && !foodChanged && !mealChanged && !countsChanged && !moneyChanged) {
         msg($('saveMsg'), 'Fill at least one field or add a tablet to the log.', 'err'); return;
       }
-      if (!toSave.length && !logToUpsert.length && !logToClear.length && !alcoholToUpsert.length && !alcoholToClear.length && !bmiChanged && !foodChanged && !mealChanged && !countsChanged) {
+      if (!toSave.length && !logToUpsert.length && !logToClear.length && !bmiChanged && !foodChanged && !mealChanged && !countsChanged && !moneyChanged) {
         msg($('saveMsg'), 'No changes to save.', ''); return;
       }
 
@@ -2237,14 +2199,6 @@
         }
         if (logToUpsert.length || logToClear.length) originalLog = new Map(pendingLog);
 
-        for (const [name, shots] of alcoholToUpsert) {
-          await DB.alcoholLogSet(logDate, name, shots);
-        }
-        for (const name of alcoholToClear) {
-          await DB.alcoholLogDelete(logDate, name);
-        }
-        if (alcoholToUpsert.length || alcoholToClear.length) originalAlcohol = new Map(pendingAlcohol);
-
         if (bmiChanged) {
           if (bmiWeightKg == null && bmiHeightCm == null) {
             await DB.bodyMetricsDelete(logDate);
@@ -2286,9 +2240,20 @@
           }
         }
 
+        if (moneyChanged) {
+          const hasAnyMoneyValue = MONEY_FIELDS.some(f => moneyFields[f.key] != null) || moneyFields.currency;
+          if (!hasAnyMoneyValue) {
+            await DB.moneyLogDelete(logDate);
+            loadedMoney = {};
+          } else {
+            await DB.moneyLogSet(logDate, moneyFields);
+            loadedMoney = moneyFields;
+          }
+        }
+
         const savedCount = plan.length + logToUpsert.length + logToClear.length
-          + alcoholToUpsert.length + alcoholToClear.length + (bmiChanged ? 1 : 0)
-          + foodToSet.length + foodToClear.length + (mealChanged ? 1 : 0) + (countsChanged ? 1 : 0);
+          + (bmiChanged ? 1 : 0) + foodToSet.length + foodToClear.length
+          + (mealChanged ? 1 : 0) + (countsChanged ? 1 : 0) + (moneyChanged ? 1 : 0);
         msg($('saveMsg'), `Saved ${savedCount} entr${savedCount === 1 ? 'y' : 'ies'}.`, 'ok');
         FIELDS.forEach(f => { $(f.id).value = ''; });
         $('wakeupRedH').value = ''; $('wakeupRedM').value = '';

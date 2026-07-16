@@ -1,6 +1,9 @@
 -- Alcohol tracker: manageable list of alcohol items (type + subtype + ABV%)
--- + a daily shots-taken log, same pattern as supplements. Run in
--- Supabase → SQL Editor.
+-- + a daily shots-taken log. A day can have multiple entries (even for the
+-- same drink), so alcohol_log is transactional (own id per entry), not one
+-- row per item per day. Run in Supabase → SQL Editor. (Supersedes an
+-- earlier one-row-per-item-per-day version of alcohol_log — drops it if
+-- present; alcohol_items is untouched.)
 
 create table if not exists alcohol_items (
   name        text primary key,
@@ -13,11 +16,14 @@ create table if not exists alcohol_items (
   created_at  timestamptz not null default now()
 );
 
-create table if not exists alcohol_log (
+drop table if exists alcohol_log;
+
+create table alcohol_log (
+  id           bigint generated always as identity primary key,
   log_date     date not null,
   alcohol_item text not null references alcohol_items(name) on delete cascade,
   shots        numeric,
-  primary key (log_date, alcohol_item)
+  created_at   timestamptz not null default now()
 );
 
 alter table alcohol_items enable row level security;
@@ -32,9 +38,7 @@ create policy "alcohol_items update" on alcohol_items for update to authenticate
 
 drop policy if exists "alcohol_log read"   on alcohol_log;
 drop policy if exists "alcohol_log insert" on alcohol_log;
-drop policy if exists "alcohol_log update" on alcohol_log;
 drop policy if exists "alcohol_log delete" on alcohol_log;
 create policy "alcohol_log read"   on alcohol_log for select to authenticated using (true);
 create policy "alcohol_log insert" on alcohol_log for insert to authenticated with check (true);
-create policy "alcohol_log update" on alcohol_log for update to authenticated using (true);
 create policy "alcohol_log delete" on alcohol_log for delete to authenticated using (true);
