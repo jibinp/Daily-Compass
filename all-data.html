@@ -97,6 +97,11 @@
     .tnode:hover { background: var(--field); }
     .tnode.active { background: var(--field); color: var(--accent); font-weight: 600; }
     .tnode.soon { opacity: 0.5; pointer-events: none; }
+    .nav-badge {
+      margin-left: auto; background: var(--err); color: #2a0505;
+      font-size: 0.68rem; font-weight: 700; line-height: 1;
+      border-radius: 999px; padding: 2px 6px;
+    }
     .tw { width: 1em; font-size: 0.62rem; color: var(--muted); display: inline-block; text-align: center; transition: transform 0.15s; }
     .tw-sp { width: 1em; display: inline-block; }
     .tchildren { padding-left: 14px; }
@@ -173,7 +178,7 @@
         </div>
       </div>
       <a class="tnode soon"><span class="tw-sp"></span>📊 Stats</a>
-      <div class="tfolder tnode collapsed" data-group="g-settings"><span class="tw">▾</span>⚙️ Settings</div>
+      <div class="tfolder tnode collapsed" data-group="g-settings"><span class="tw">▾</span>⚙️ Settings<span class="nav-badge hidden" id="settingsBadge"></span></div>
       <div class="tchildren collapsed" id="g-settings">
         <a class="tnode" href="developer.html"><span class="tw-sp"></span>🛠️ Developer</a>
       </div>
@@ -257,6 +262,14 @@
     $('navToggle').addEventListener('click', openNav);
     $('navClose').addEventListener('click', closeNav);
     $('navBackdrop').addEventListener('click', closeNav);
+    // ---- Settings badge: shows a count when unresolved dev errors exist ----
+    (function updateSettingsBadge() {
+      try {
+        const log = JSON.parse(sessionStorage.getItem('dc_dev_errors') || '[]');
+        const badge = document.getElementById('settingsBadge');
+        if (badge && log.length) { badge.textContent = log.length; badge.classList.remove('hidden'); }
+      } catch { /* sessionStorage unavailable */ }
+    })();
     document.addEventListener('keydown', e => { if (e.key === 'Escape') closeNav(); });
     $('sidebar').addEventListener('click', e => {
       const f = e.target.closest('.tfolder');
