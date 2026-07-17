@@ -109,6 +109,18 @@
     /* ---- data table ---- */
     .data-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
     .data-head h2 { margin: 0; font-size: 1rem; }
+    .range-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; }
+    .muted-note { color: var(--muted); font-size: 0.82rem; }
+    .mini-btn {
+      background: var(--accent); color: #06202e; border: none;
+      border-radius: 8px; padding: 7px 12px; font-size: 0.82rem; font-weight: 600; cursor: pointer;
+    }
+    .mini-btn.ghost { background: var(--field); color: var(--text); border: 1px solid var(--border); }
+    .mini-btn[data-active="1"] { outline: 2px solid var(--accent); outline-offset: 1px; }
+    .range-bar input[type="date"] {
+      background: var(--field); border: 1px solid var(--border); color: var(--text);
+      border-radius: 8px; padding: 6px 8px; font-size: 0.82rem; color-scheme: dark;
+    }
     /* overflow-x alone would implicitly force overflow-y to 'auto' too (per
        spec, 'visible' can't pair with a non-visible axis) — turning this
        into its own scroll box. Made deliberate: bounded self-scrolling table
@@ -171,7 +183,6 @@
       <div class="tchildren collapsed" id="g-health">
         <a class="tnode" href="health-log.html"><span class="tw-sp"></span>Data Entry</a>
         <a class="tnode" href="supplement-tracker.html"><span class="tw-sp"></span>Tablet Ingredient Updater</a>
-        <a class="tnode" href="all-data.html"><span class="tw-sp"></span>All Data</a>
         <a class="tnode active" href="bmi-history.html"><span class="tw-sp"></span>⚖️ BMI/BMR History</a>
         <a class="tnode" href="time-history.html"><span class="tw-sp"></span>☀️ Time History</a>
       </div>
@@ -211,6 +222,15 @@
             <button class="link-btn" id="refreshBtn">↻ Refresh</button>
           </div>
         </div>
+        <div class="range-bar">
+          <button class="mini-btn ghost" id="rangeLast50">Last 50 entries</button>
+          <button class="mini-btn" id="rangeAll" data-active="1">All data</button>
+          <label class="muted-note" for="rangeFrom">From</label>
+          <input type="date" id="rangeFrom" />
+          <label class="muted-note" for="rangeTo">To</label>
+          <input type="date" id="rangeTo" />
+          <button class="mini-btn ghost" id="rangeApply">Apply</button>
+        </div>
         <div class="msg" id="dataMsg"></div>
         <div class="table-wrap">
           <table id="dataTable" class="locked">
@@ -249,17 +269,27 @@
       onAuthChange(cb) { supabase.auth.onAuthStateChange((_e, s) => cb(s)); },
       async currentSession() { const { data } = await supabase.auth.getSession(); return data.session; },
       async signOut() { await supabase.auth.signOut(); },
-      async allBodyMetrics() {
+      async allBodyMetrics(fromDate, toDate, limitCount) {
+        if (limitCount) {
+          const { data, error } = await supabase.from('body_metrics')
+            .select('log_date, weight_kg, height_cm, waist_cm, hip_cm')
+            .order('log_date', { ascending: false })
+            .limit(limitCount);
+          if (error) throw error;
+          return data;
+        }
         // Paginate (see time-history.html) — Supabase caps a single request
         // at ~1000 rows regardless of client .limit().
         const PAGE = 1000;
         let all = [];
         let offset = 0;
         while (true) {
-          const { data, error } = await supabase.from('body_metrics')
+          let q = supabase.from('body_metrics')
             .select('log_date, weight_kg, height_cm, waist_cm, hip_cm')
-            .order('log_date', { ascending: false })
-            .range(offset, offset + PAGE - 1);
+            .order('log_date', { ascending: false });
+          if (fromDate) q = q.gte('log_date', fromDate);
+          if (toDate) q = q.lte('log_date', toDate);
+          const { data, error } = await q.range(offset, offset + PAGE - 1);
           if (error) throw error;
           all = all.concat(data);
           if (data.length < PAGE) break;
@@ -466,8 +496,20 @@
       if (cancelBtn) cancelBtn.addEventListener('click', () => { editingDate = null; renderTable(); });
     }
 
+    // currentRange: null/null/null = "all data"; limitCount set = "last N
+    // entries" (by row count, not calendar days — weight entries are
+    // sparse/occasional, so a day-window would often show almost nothing).
+    let currentRange = { from: null, to: null, limitCount: null };
+
+    function setActiveQuickBtn(id) {
+      ['rangeLast50', 'rangeAll'].forEach(btnId => {
+        if (btnId === id) $(btnId).dataset.active = '1';
+        else delete $(btnId).dataset.active;
+      });
+    }
+
     async function loadRows() {
-      rows = await DB.allBodyMetrics();
+      rows = await DB.allBodyMetrics(currentRange.from, currentRange.to, currentRange.limitCount);
       renderTable();
     }
 
@@ -481,6 +523,24 @@
     $('unlockBtn').addEventListener('click', () => {
       const isLocked = $('dataTable').classList.toggle('locked');   // true = now locked
       $('unlockBtn').textContent = isLocked ? '🔓 Unlock edit/delete' : '🔒 Lock edit/delete';
+    });
+
+    $('rangeLast50').addEventListener('click', async () => {
+      currentRange = { from: null, to: null, limitCount: 50 };
+      $('rangeFrom').value = ''; $('rangeTo').value = '';
+      setActiveQuickBtn('rangeLast50');
+      try { await loadRows(); } catch (e) { dataMsg('Could not load: ' + e.message, 'err'); }
+    });
+    $('rangeAll').addEventListener('click', async () => {
+      currentRange = { from: null, to: null, limitCount: null };
+      $('rangeFrom').value = ''; $('rangeTo').value = '';
+      setActiveQuickBtn('rangeAll');
+      try { await loadRows(); } catch (e) { dataMsg('Could not load: ' + e.message, 'err'); }
+    });
+    $('rangeApply').addEventListener('click', async () => {
+      currentRange = { from: $('rangeFrom').value || null, to: $('rangeTo').value || null, limitCount: null };
+      setActiveQuickBtn(null);
+      try { await loadRows(); } catch (e) { dataMsg('Could not load: ' + e.message, 'err'); }
     });
 
     // ---- route: no session → sign in on the picker page ----

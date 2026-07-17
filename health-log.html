@@ -82,7 +82,7 @@
       gap: 8px;
       align-items: stretch;
     }
-    input[type="datetime-local"], input[type="email"],
+    input[type="datetime-local"], input[type="email"], input[type="text"],
     input[type="time"], input[type="date"], input[type="number"] {
       flex: 1;
       width: 100%;
@@ -371,6 +371,10 @@
       border: 1px solid var(--border); margin-top: 6px; display: block;
     }
     .log-add-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+    .log-add-row #alcIncBtn, .log-add-row #alcDecBtn {
+      flex: 0 0 52px; padding: 14px 0; font-size: 1.4rem; font-weight: 700; line-height: 1;
+    }
+    .log-add-row #logShots { flex: 0 0 90px; }
     .tablet-thumb-lg {
       width: 84px; height: 84px; border-radius: 12px; object-fit: contain;
       background: var(--field); border: 1px solid var(--border); flex: 0 0 auto;
@@ -411,7 +415,6 @@
       <div class="tchildren collapsed" id="g-health">
         <a class="tnode active" href="health-log.html"><span class="tw-sp"></span>Data Entry</a>
         <a class="tnode" href="supplement-tracker.html"><span class="tw-sp"></span>Tablet Ingredient Updater</a>
-        <a class="tnode" href="all-data.html"><span class="tw-sp"></span>All Data</a>
         <a class="tnode" href="bmi-history.html"><span class="tw-sp"></span>⚖️ BMI/BMR History</a>
         <a class="tnode" href="time-history.html"><span class="tw-sp"></span>☀️ Time History</a>
       </div>
@@ -676,10 +679,12 @@
 
           <div class="field jump-target" id="sectionAlcohol">
             <div class="field-head"><span class="icon">🍺</span><span class="label">Alcohol log</span></div>
-            <div class="muted-note">Pick a drink, set shots, tap Add. Saves with the topbar Save button — uses the date selected there.</div>
+            <div class="muted-note">Pick a drink. Tap +/− while drinking to log a shot instantly, or set an exact amount and Add later — both save immediately, using the date selected at top.</div>
 
             <select class="tz-select-sm" id="logAlcoholSelect" aria-label="Select drink"></select>
             <div class="log-add-row">
+              <button class="mini-btn ghost" id="alcDecBtn" type="button" title="Remove the last shot logged for this drink today">−</button>
+              <button class="mini-btn ghost" id="alcIncBtn" type="button" title="Log 1 shot now">+</button>
               <input type="number" step="any" id="logShots" placeholder="Shots" min="0" />
               <button class="mini-btn" id="logAlcoholAddBtn" type="button">＋ Add</button>
             </div>
@@ -1708,16 +1713,89 @@
     }
 
     // Switch the selected log date (topbar date input is the only picker now).
-    function goToDate(value) {
+    // ================================================================
+    // Draft autosave — mobile browsers/PWAs can silently reload a
+    // backgrounded tab (e.g. switching to another app to copy data in,
+    // then coming back), wiping any unsaved input. Every keystroke in a
+    // staged field gets mirrored to localStorage per-date; on load, if a
+    // newer draft exists for that date than what's in the field, it wins.
+    // Cleared once Save actually commits it to the DB.
+    const DRAFT_PREFIX = 'dc_draft_';
+    const DRAFT_FIELD_IDS = [
+      ...FIELDS.map(f => f.id), 'wakeupRedH', 'wakeupRedM',
+      'weightInput', 'heightInput', 'waistInput', 'hipInput',
+      ...MEAL_FIELDS.map(f => 'meal' + capitalize(f)), 'mealEaten', 'mealRemarks',
+      ...DC_FIELDS.map(f => f.id),
+      ...MONEY_FIELDS.map(f => f.id), 'mnCurrency',
+    ];
+    function collectDraftFields() {
+      const draft = {};
+      DRAFT_FIELD_IDS.forEach(id => { const el = $(id); if (el) draft[id] = el.value; });
+      document.querySelectorAll('.food-qty').forEach(input => {
+        draft['food:' + input.dataset.food] = input.value;
+      });
+      return draft;
+    }
+    function saveDraft() {
+      try {
+        const logDate = $('topbarLogDate').value;
+        if (!logDate) return;
+        localStorage.setItem(DRAFT_PREFIX + logDate, JSON.stringify({ ts: Date.now(), fields: collectDraftFields() }));
+      } catch { /* localStorage unavailable — draft just won't survive a reload */ }
+    }
+    function clearDraft(logDate) {
+      try { localStorage.removeItem(DRAFT_PREFIX + (logDate || $('topbarLogDate').value)); } catch { /* ignore */ }
+    }
+    // Any typing in a staged field mirrors to the draft — cheap, and
+    // simpler than wiring a listener onto every individual input.
+    document.addEventListener('input', e => {
+      if (e.target.matches('input, textarea, select')) saveDraft();
+    });
+    const DRAFT_MAX_AGE_MS = 3 * 60 * 60 * 1000;   // 3h — older than this is stale, not "just interrupted"
+    function restoreDraft(logDate) {
+      try {
+        const raw = localStorage.getItem(DRAFT_PREFIX + logDate);
+        if (!raw) return false;
+        const { ts, fields } = JSON.parse(raw);
+        if (!ts || Date.now() - ts > DRAFT_MAX_AGE_MS) {
+          clearDraft(logDate);   // stale — discard rather than silently reapply old data
+          return false;
+        }
+        let restoredAny = false;
+        Object.entries(fields).forEach(([key, val]) => {
+          if (!val) return;
+          if (key.startsWith('food:')) {
+            const input = document.querySelector(`.food-qty[data-food="${CSS.escape(key.slice(5))}"]`);
+            if (input && input.value !== val) { input.value = val; restoredAny = true; }
+          } else {
+            const el = $(key);
+            if (el && el.value !== val) { el.value = val; restoredAny = true; }
+          }
+        });
+        return restoredAny;
+      } catch { return false; }
+    }
+
+    async function goToDate(value) {
       $('topbarLogDate').value = value;
-      loadDay(value);
-      loadSupplementLog(value);
-      loadAlcoholLog(value);
-      loadBodyMetrics(value);
-      loadFoodLog(value);
-      loadMealLog(value);
-      loadDailyCounts(value);
-      loadMoneyLog(value);
+      await Promise.all([
+        loadDay(value),
+        loadSupplementLog(value),
+        loadAlcoholLog(value),
+        loadBodyMetrics(value),
+        loadFoodLog(value),
+        loadMealLog(value),
+        loadDailyCounts(value),
+        loadMoneyLog(value),
+      ]);
+      if (restoreDraft(value)) {
+        // renderFoodItemsList() is NOT called here — it rebuilds .food-qty
+        // inputs from loadedFood and would immediately wipe the values
+        // restoreDraft() just set on them.
+        updateBmiDisplay(); renderMealCompare();
+        updateDirtyIndicator();
+        msg($('saveMsg'), 'Restored unsaved changes from before the page reloaded.', 'ok');
+      }
     }
 
     // In-app confirm dialog → resolves true (ok) / false (cancel).
@@ -2278,6 +2356,43 @@
       } finally { $('logAlcoholAddBtn').disabled = false; }
     });
 
+    // Quick tap-to-log while actually drinking — each tap saves 1 shot
+    // immediately, no need to remember to hit the topbar Save button (that
+    // button doesn't even apply here; alcohol log always saves per-entry).
+    $('alcIncBtn').addEventListener('click', async () => {
+      const logDate = $('topbarLogDate').value;
+      const name = $('logAlcoholSelect').value;
+      if (!logDate) { msg($('logAlcoholMsg'), 'Pick the log date at top.', 'err'); return; }
+      if (!name) { msg($('logAlcoholMsg'), 'Select a drink first.', 'err'); return; }
+      $('alcIncBtn').disabled = true;
+      try {
+        await DB.alcoholLogAdd(logDate, name, 1);
+        await loadAlcoholLog(logDate);
+        msg($('logAlcoholMsg'), `+1 shot logged for ${name}.`, 'ok');
+      } catch (e) {
+        msg($('logAlcoholMsg'), 'Save failed: ' + (e.message || ''), 'err');
+      } finally { $('alcIncBtn').disabled = false; }
+    });
+    // Undoes the most recently logged entry for the selected drink today —
+    // not a running total, so "decrement" means "remove the last tap".
+    $('alcDecBtn').addEventListener('click', async () => {
+      const logDate = $('topbarLogDate').value;
+      const name = $('logAlcoholSelect').value;
+      if (!logDate) { msg($('logAlcoholMsg'), 'Pick the log date at top.', 'err'); return; }
+      if (!name) { msg($('logAlcoholMsg'), 'Select a drink first.', 'err'); return; }
+      const matches = alcoholEntries.filter(a => a.alcohol_item === name);
+      const last = matches[matches.length - 1];   // alcoholEntries is id-ordered ascending
+      if (!last) { msg($('logAlcoholMsg'), `Nothing logged for ${name} today yet.`, 'err'); return; }
+      $('alcDecBtn').disabled = true;
+      try {
+        await DB.alcoholLogDelete(last.id);
+        await loadAlcoholLog(logDate);
+        msg($('logAlcoholMsg'), `Removed last ${name} entry.`, 'ok');
+      } catch (e) {
+        msg($('logAlcoholMsg'), 'Remove failed: ' + (e.message || ''), 'err');
+      } finally { $('alcDecBtn').disabled = false; }
+    });
+
     async function loadAlcoholLog(logDate) {
       const el = $('alcoholPendingList');
       alcoholEntries = [];
@@ -2537,6 +2652,7 @@
           + (bmiChanged ? 1 : 0) + foodToSet.length + foodToClear.length
           + (mealChanged ? 1 : 0) + (countsChanged ? 1 : 0) + (moneyChanged ? 1 : 0);
         msg($('saveMsg'), `Saved ${savedCount} entr${savedCount === 1 ? 'y' : 'ies'}.`, 'ok');
+        clearDraft(logDate);
         FIELDS.forEach(f => { $(f.id).value = ''; });
         $('wakeupRedH').value = ''; $('wakeupRedM').value = '';
         loadedValues = {};
@@ -2649,6 +2765,13 @@
       await loadMoneyLog($('topbarLogDate').value);
       await refreshSleepLast();
       await loadStats();
+      if (restoreDraft($('topbarLogDate').value)) {
+        // renderFoodItemsList() is NOT called here — see the same note in
+        // goToDate().
+        updateBmiDisplay(); renderMealCompare();
+        updateDirtyIndicator();
+        msg($('saveMsg'), 'Restored unsaved changes from before the page reloaded.', 'ok');
+      }
     }
 
     DB.onAuthChange(session => {
