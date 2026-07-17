@@ -131,6 +131,9 @@
       font-size: 1.3rem; font-weight: 700; color: var(--accent);
       padding: 4px 2px 0;
     }
+    .fasting-val.pass { color: var(--ok); }
+    .fasting-val.fail { color: var(--err); }
+    .fasting-val.warn { color: var(--warn); }
     .tz-select {
       margin-left: auto; max-width: 55%;
       background: var(--field); border: 1px solid var(--border);
@@ -417,6 +420,7 @@
         <a class="tnode" href="supplement-tracker.html"><span class="tw-sp"></span>Tablet Ingredient Updater</a>
         <a class="tnode" href="bmi-history.html"><span class="tw-sp"></span>⚖️ BMI/BMR History</a>
         <a class="tnode" href="time-history.html"><span class="tw-sp"></span>☀️ Time History</a>
+        <a class="tnode" href="alcohol-history.html"><span class="tw-sp"></span>🍸 Alcohol History</a>
       </div>
       <div class="tfolder tnode collapsed" data-group="g-temp"><span class="tw">▾</span>🗓️ Temporary</div>
       <div class="tchildren collapsed" id="g-temp">
@@ -433,6 +437,7 @@
       <div class="tfolder tnode collapsed" data-group="g-settings"><span class="tw">▾</span>⚙️ Settings<span class="nav-badge hidden" id="settingsBadge"></span></div>
       <div class="tchildren collapsed" id="g-settings">
         <a class="tnode" href="developer.html"><span class="tw-sp"></span>🛠️ Developer</a>
+        <a class="tnode" href="thresholds.html"><span class="tw-sp"></span>🎯 Thresholds</a>
       </div>
     </div>
   </nav>
@@ -962,6 +967,11 @@
         const { error } = await supabase.from('alcohol_log').insert({ log_date, alcohol_item, shots });
         if (error) throw error;
       },
+      async alcoholLogSetShots(id, shots) {
+        const { data, error } = await supabase.from('alcohol_log').update({ shots }).eq('id', id).select();
+        if (error) throw error;
+        if (!data.length) throw new Error(`No row updated for alcohol_log id=${id} (stale id, or blocked by RLS).`);
+      },
       async alcoholLogDelete(id) {
         const { error } = await supabase.from('alcohol_log').delete().eq('id', id);
         if (error) throw error;
@@ -998,6 +1008,16 @@
           .select('date_of_birth, sex').eq('id', 1).maybeSingle();
         if (error) throw error;
         return data;
+      },
+      // latest threshold row with effective_date <= today (thresholds
+      // change rarely — see thresholds.html)
+      async thresholdForToday(metric_key) {
+        const { data, error } = await supabase.from('thresholds')
+          .select('value').eq('metric_key', metric_key)
+          .lte('effective_date', todayDate())
+          .order('effective_date', { ascending: false }).limit(1);
+        if (error) throw error;
+        return data.length ? data[0].value : null;
       },
       async profileSet(date_of_birth, sex) {
         const { error } = await supabase.from('user_profile').upsert({
@@ -1824,12 +1844,15 @@
     // even earlier — not necessarily same-day). If eat_start hasn't been
     // logged yet for that date, use the current time as a live, still-
     // counting endpoint instead.
-    const FAST_GOAL_MIN = 16 * 60;   // 16h target
+    // Threshold is fetched once (see thresholds.html); falls back to the
+    // old hardcoded 16h if the thresholds table has no row yet.
+    let fastGoalMin = 16 * 60;
     let lastEatEnd = null;
     let fastingEatStart = null;   // ISO instant the window is measured up to
     let fastingIsLive = false;    // true when using "now" (eat_start not logged yet)
     function updateFasting() {
       const el = $('fasting'), bar = $('fastingBar'), pctEl = $('fastingPct');
+      el.classList.remove('pass', 'fail');
       if (!lastEatEnd || !fastingEatStart) {
         el.textContent = '—'; bar.style.width = '0'; bar.classList.remove('full');
         pctEl.textContent = ''; return;
@@ -1838,10 +1861,11 @@
       let mins = (endPoint - new Date(lastEatEnd)) / 60000;
       if (mins < 0) mins = 0;   // eat_start should always be after the prior eat_end
       el.textContent = `${Math.floor(mins / 60)}h ${Math.round(mins % 60)}m`;
-      const pct = Math.round(mins / FAST_GOAL_MIN * 100);
+      el.classList.add(mins >= fastGoalMin ? 'pass' : 'fail');
+      const pct = Math.round(mins / fastGoalMin * 100);
       bar.style.width = Math.min(100, pct) + '%';     // bar caps at full
       bar.classList.toggle('full', pct >= 100);
-      pctEl.textContent = `${pct}% of 16h`;            // percent keeps climbing
+      pctEl.textContent = `${pct}% of ${fastGoalMin / 60}h`;   // percent keeps climbing
     }
     async function refreshFasting() {
       try {
@@ -1853,15 +1877,31 @@
       updateFasting();
     }
 
+    // Sleep-duration bands (see thresholds.html): <verylow = Very low,
+    // verylow-warn = Warning, warn-ok = OK, ok-bithigh = Bit high, above =
+    // Over. Loaded once (today's cutoffs — this card is always "last
+    // night", not a specific past date). Falls back to the values already
+    // seeded (6/7/8/9) if the thresholds table has no rows yet.
+    let sleepCutoffs = { verylow: 6, warn: 7, ok: 8, bithigh: 9 };
+    function sleepBand(hours) {
+      const { verylow, warn, ok, bithigh } = sleepCutoffs;
+      if (hours < verylow) return 'fail';
+      if (hours < warn) return 'warn';
+      if (hours < ok) return 'pass';
+      if (hours < bithigh) return 'warn';
+      return 'fail';
+    }
     // Sleep last night = latest wakeup − latest sleep (when wakeup is after sleep).
     async function refreshSleepLast() {
       const el = $('sleepLast');
+      el.classList.remove('pass', 'warn', 'fail');
       try {
         const [wake, sleep] = await Promise.all([DB.lastEventWithReduction('wakeup'), DB.lastEvent('sleep')]);
         if (!wake || !sleep) { el.textContent = '—'; return; }
         let mins = (new Date(wake.datetime) - new Date(sleep)) / 60000 - (wake.reduction_min || 0);
         if (mins <= 0) { el.textContent = '—'; return; }
         el.textContent = `${Math.floor(mins / 60)}h ${Math.round(mins % 60)}m`;
+        el.classList.add(sleepBand(mins / 60));
       } catch { el.textContent = '—'; }
     }
     setInterval(updateFasting, 60000);   // tick every minute
@@ -2338,6 +2378,12 @@
       });
     }
 
+    // Same drink logged again same day merges into its existing row (shots
+    // summed) instead of adding another line — one row per drink per day.
+    function existingEntry(name) {
+      return alcoholEntries.find(a => a.alcohol_item === name);
+    }
+
     $('logAlcoholAddBtn').addEventListener('click', async () => {
       const logDate = $('topbarLogDate').value;
       const name = $('logAlcoholSelect').value;
@@ -2347,7 +2393,9 @@
       if (!shots || shots <= 0) { msg($('logAlcoholMsg'), 'Enter shots.', 'err'); return; }
       $('logAlcoholAddBtn').disabled = true;
       try {
-        await DB.alcoholLogAdd(logDate, name, shots);
+        const existing = existingEntry(name);
+        if (existing) await DB.alcoholLogSetShots(existing.id, (existing.shots || 0) + shots);
+        else await DB.alcoholLogAdd(logDate, name, shots);
         await loadAlcoholLog(logDate);
         $('logShots').value = '';
         msg($('logAlcoholMsg'), '', '');
@@ -2366,28 +2414,31 @@
       if (!name) { msg($('logAlcoholMsg'), 'Select a drink first.', 'err'); return; }
       $('alcIncBtn').disabled = true;
       try {
-        await DB.alcoholLogAdd(logDate, name, 1);
+        const existing = existingEntry(name);
+        if (existing) await DB.alcoholLogSetShots(existing.id, (existing.shots || 0) + 1);
+        else await DB.alcoholLogAdd(logDate, name, 1);
         await loadAlcoholLog(logDate);
         msg($('logAlcoholMsg'), `+1 shot logged for ${name}.`, 'ok');
       } catch (e) {
         msg($('logAlcoholMsg'), 'Save failed: ' + (e.message || ''), 'err');
       } finally { $('alcIncBtn').disabled = false; }
     });
-    // Undoes the most recently logged entry for the selected drink today —
-    // not a running total, so "decrement" means "remove the last tap".
+    // Decrements that drink's shots for today by 1; removes the row
+    // entirely once it hits 0.
     $('alcDecBtn').addEventListener('click', async () => {
       const logDate = $('topbarLogDate').value;
       const name = $('logAlcoholSelect').value;
       if (!logDate) { msg($('logAlcoholMsg'), 'Pick the log date at top.', 'err'); return; }
       if (!name) { msg($('logAlcoholMsg'), 'Select a drink first.', 'err'); return; }
-      const matches = alcoholEntries.filter(a => a.alcohol_item === name);
-      const last = matches[matches.length - 1];   // alcoholEntries is id-ordered ascending
-      if (!last) { msg($('logAlcoholMsg'), `Nothing logged for ${name} today yet.`, 'err'); return; }
+      const existing = existingEntry(name);
+      if (!existing) { msg($('logAlcoholMsg'), `Nothing logged for ${name} today yet.`, 'err'); return; }
       $('alcDecBtn').disabled = true;
       try {
-        await DB.alcoholLogDelete(last.id);
+        const next = (existing.shots || 0) - 1;
+        if (next > 0) await DB.alcoholLogSetShots(existing.id, next);
+        else await DB.alcoholLogDelete(existing.id);
         await loadAlcoholLog(logDate);
-        msg($('logAlcoholMsg'), `Removed last ${name} entry.`, 'ok');
+        msg($('logAlcoholMsg'), `-1 shot for ${name}.`, 'ok');
       } catch (e) {
         msg($('logAlcoholMsg'), 'Remove failed: ' + (e.message || ''), 'err');
       } finally { $('alcDecBtn').disabled = false; }
@@ -2756,6 +2807,20 @@
         const p = await DB.profileGet();
         if (p) profile = p;
       } catch { /* profile is optional — BMR just won't show without it */ }
+      try {
+        const t = await DB.thresholdForToday('fasting_hours');
+        if (t != null) fastGoalMin = t * 60;
+      } catch { /* falls back to hardcoded 16h */ }
+      try {
+        const [verylow, warn, ok, bithigh] = await Promise.all([
+          DB.thresholdForToday('sleep_h_verylow'), DB.thresholdForToday('sleep_h_warn'),
+          DB.thresholdForToday('sleep_h_ok'), DB.thresholdForToday('sleep_h_bithigh'),
+        ]);
+        if (verylow != null) sleepCutoffs.verylow = verylow;
+        if (warn != null) sleepCutoffs.warn = warn;
+        if (ok != null) sleepCutoffs.ok = ok;
+        if (bithigh != null) sleepCutoffs.bithigh = bithigh;
+      } catch { /* falls back to hardcoded 6/7/8/9 */ }
       await loadSupplementLog($('topbarLogDate').value);
       await loadAlcoholLog($('topbarLogDate').value);
       await loadBodyMetrics($('topbarLogDate').value);

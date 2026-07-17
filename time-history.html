@@ -23,6 +23,7 @@
       --accent-press: #0ea5e9;
       --ok: #22c55e;
       --err: #f87171;
+      --warn: #f59e0b;
     }
     * { box-sizing: border-box; }
     html { color-scheme: dark; scrollbar-width: none; }
@@ -139,6 +140,9 @@
     .zone-tag { color: var(--muted); font-size: 0.72rem; }
     .no-data { color: var(--muted); font-style: italic; }
     .calc-val { border-bottom: 1px dotted var(--muted); cursor: help; }
+    .calc-val.pass { color: var(--ok); font-weight: 600; }
+    .calc-val.fail { color: var(--err); font-weight: 600; }
+    .calc-val.warn { color: var(--warn); font-weight: 600; }
     .entry-row { display: flex; align-items: center; gap: 4px; margin-bottom: 6px; }
     .entry-row:last-child { margin-bottom: 0; }
     .edit-btn, .del-btn {
@@ -200,6 +204,7 @@
         <a class="tnode" href="supplement-tracker.html"><span class="tw-sp"></span>Tablet Ingredient Updater</a>
         <a class="tnode" href="bmi-history.html"><span class="tw-sp"></span>⚖️ BMI/BMR History</a>
         <a class="tnode active" href="time-history.html"><span class="tw-sp"></span>☀️ Time History</a>
+        <a class="tnode" href="alcohol-history.html"><span class="tw-sp"></span>🍸 Alcohol History</a>
       </div>
       <div class="tfolder tnode collapsed" data-group="g-temp"><span class="tw">▾</span>🗓️ Temporary</div>
       <div class="tchildren collapsed" id="g-temp">
@@ -216,6 +221,7 @@
       <div class="tfolder tnode collapsed" data-group="g-settings"><span class="tw">▾</span>⚙️ Settings<span class="nav-badge hidden" id="settingsBadge"></span></div>
       <div class="tchildren collapsed" id="g-settings">
         <a class="tnode" href="developer.html"><span class="tw-sp"></span>🛠️ Developer</a>
+        <a class="tnode" href="thresholds.html"><span class="tw-sp"></span>🎯 Thresholds</a>
       </div>
     </div>
   </nav>
@@ -322,6 +328,15 @@
       async deleteEvent(id) {
         const { error } = await supabase.from('events').delete().eq('id', id);
         if (error) throw error;
+      },
+      // full history for one metric, oldest first (for per-date lookup —
+      // see thresholdAt)
+      async thresholdHistory(metric_key) {
+        const { data, error } = await supabase.from('thresholds')
+          .select('value, effective_date').eq('metric_key', metric_key)
+          .order('effective_date', { ascending: true });
+        if (error) throw error;
+        return data;
       },
     };
 
@@ -487,8 +502,24 @@
       return best;
     }
     function reductionOf(r) { return r.reduction_min == null ? null : fmtDuration(r.reduction_min); }
-    // Returns { text, tip } so the cell can show the number and hover-reveal
-    // exactly which two events (and reduction, if any) it came from.
+
+    // Fasting threshold history (see thresholds.html) — fetched once,
+    // looked up per row by that row's own log_date since the threshold can
+    // change over time. Rows from before the earliest threshold row exist
+    // get no pass/fail color (nothing to compare against yet).
+    let fastingThresholds = [];
+    function thresholdAt(list, dateStr) {
+      let best = null;
+      for (const t of list) {
+        if (t.effective_date <= dateStr) best = t;
+        else break;   // list is sorted ascending
+      }
+      return best ? best.value : null;
+    }
+
+    // Returns { text, tip, cls } so the cell can show the number, hover-
+    // reveal exactly which two events (and reduction, if any) it came from,
+    // and color green/red against the fasting threshold in effect that day.
     function fastingWindowOf(r) {
       const prevEnd = lastEatEndBefore(r.datetime);
       if (!prevEnd) return null;
@@ -497,7 +528,27 @@
       const tip = `Fast Start : ${fmtWhen(prevEnd.datetime, prevEnd.tz || currentTz)}\n`
         + `Fast End : ${fmtWhen(r.datetime, r.tz || currentTz)}\n`
         + `Fast duration : ${fmtDuration(mins)}`;
-      return { text: fmtDuration(mins), tip };
+      const threshold = thresholdAt(fastingThresholds, r.log_date || dayKey(r.datetime));
+      const cls = threshold == null ? '' : (mins >= threshold * 60 ? 'pass' : 'fail');
+      return { text: fmtDuration(mins), tip, cls };
+    }
+    // Sleep-duration bands (see thresholds.html): <verylow = Very low,
+    // verylow-warn = Warning, warn-ok = OK, ok-bithigh = Bit high, above =
+    // Over. Cutoffs fetched once; looked up per row by that row's own
+    // log_date. Returns null (no band/color) if cutoffs aren't loaded yet
+    // for that date.
+    let sleepThresholds = { verylow: [], warn: [], ok: [], bithigh: [] };
+    function sleepBand(hours, dateStr) {
+      const lo = thresholdAt(sleepThresholds.verylow, dateStr);
+      const wa = thresholdAt(sleepThresholds.warn, dateStr);
+      const ok = thresholdAt(sleepThresholds.ok, dateStr);
+      const bh = thresholdAt(sleepThresholds.bithigh, dateStr);
+      if (lo == null || wa == null || ok == null || bh == null) return null;
+      if (hours < lo) return { label: 'Very low', cls: 'fail' };
+      if (hours < wa) return { label: 'Warning', cls: 'warn' };
+      if (hours < ok) return { label: 'OK', cls: 'pass' };
+      if (hours < bh) return { label: 'Bit high', cls: 'warn' };
+      return { label: 'Over', cls: 'fail' };
     }
     // r = a wakeup event: sleep duration = this wakeup minus the last sleep
     // before it (matches Data Entry's "Sleep last night" calc), not the
@@ -507,11 +558,13 @@
       if (!prevSleep) return null;
       const mins = (new Date(r.datetime) - new Date(prevSleep.datetime)) / 60000 - (r.reduction_min || 0);
       if (mins <= 0) return null;
+      const band = sleepBand(mins / 60, r.log_date || dayKey(r.datetime));
       const tip = `Sleep : ${fmtWhen(prevSleep.datetime, prevSleep.tz || currentTz)}\n`
         + `Wakeup : ${fmtWhen(r.datetime, r.tz || currentTz)}\n`
         + `Reduction : ${fmtDuration(r.reduction_min || 0)}\n`
-        + `duration : ${fmtDuration(mins)}`;
-      return { text: fmtDuration(mins), tip };
+        + `duration : ${fmtDuration(mins)}`
+        + (band ? `\nBand : ${band.label}` : '');
+      return { text: fmtDuration(mins), tip, cls: band ? band.cls : '' };
     }
 
     function renderDataTable() {
@@ -540,7 +593,7 @@
         return `<td>${list.map(r => {
           const val = deriveFn(r);
           if (val == null) return '<span class="no-data">No data available</span>';
-          if (typeof val === 'object') return `<span class="calc-val" title="${val.tip.replace(/"/g, '&quot;')}">${val.text}</span>`;
+          if (typeof val === 'object') return `<span class="calc-val ${val.cls || ''}" title="${val.tip.replace(/"/g, '&quot;')}">${val.text}</span>`;
           return val;
         }).join('<br>')}</td>`;
       };
@@ -663,6 +716,15 @@
       currentRange = last50Range();
       $('rangeFrom').value = currentRange.from;
       $('rangeTo').value = currentRange.to;
+      try { fastingThresholds = await DB.thresholdHistory('fasting_hours'); }
+      catch { /* threshold coloring is optional — column just stays neutral */ }
+      try {
+        const [verylow, warn, ok, bithigh] = await Promise.all([
+          DB.thresholdHistory('sleep_h_verylow'), DB.thresholdHistory('sleep_h_warn'),
+          DB.thresholdHistory('sleep_h_ok'), DB.thresholdHistory('sleep_h_bithigh'),
+        ]);
+        sleepThresholds = { verylow, warn, ok, bithigh };
+      } catch { /* threshold coloring is optional — column just stays neutral */ }
       try { await loadRows(); }
       catch (e) { dataMsg('Could not load: ' + e.message, 'err'); }
     }

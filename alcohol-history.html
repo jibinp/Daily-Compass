@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>Health Log - All Data — Daily Compass</title>
+  <title>Health Log - Alcohol History — Daily Compass</title>
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
@@ -23,6 +23,7 @@
       --accent-press: #0ea5e9;
       --ok: #22c55e;
       --err: #f87171;
+      --warn: #f59e0b;
     }
     * { box-sizing: border-box; }
     html { color-scheme: dark; scrollbar-width: none; }
@@ -109,7 +110,18 @@
     /* ---- data table ---- */
     .data-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
     .data-head h2 { margin: 0; font-size: 1rem; }
-    .dup-note { color: var(--err); font-size: 0.85rem; margin: 6px 0; }
+    .range-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; }
+    .muted-note { color: var(--muted); font-size: 0.82rem; }
+    .mini-btn {
+      background: var(--accent); color: #06202e; border: none;
+      border-radius: 8px; padding: 7px 12px; font-size: 0.82rem; font-weight: 600; cursor: pointer;
+    }
+    .mini-btn.ghost { background: var(--field); color: var(--text); border: 1px solid var(--border); }
+    .mini-btn[data-active="1"] { outline: 2px solid var(--accent); outline-offset: 1px; }
+    .range-bar input[type="date"] {
+      background: var(--field); border: 1px solid var(--border); color: var(--text);
+      border-radius: 8px; padding: 6px 8px; font-size: 0.82rem; color-scheme: dark;
+    }
     /* overflow-x alone would implicitly force overflow-y to 'auto' too (per
        spec, 'visible' can't pair with a non-visible axis) — turning this
        into its own scroll box. Made deliberate: bounded self-scrolling table
@@ -118,39 +130,11 @@
     table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
     th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
     th { color: var(--muted); font-weight: 600; background: var(--card); position: sticky; top: 0; }
-    .zone-tag { color: var(--muted); font-size: 0.72rem; }
-    .no-data { color: var(--muted); font-style: italic; }
-    .del-btn {
-      background: none; border: none; color: var(--err);
-      cursor: pointer; font-size: 1rem; padding: 0 4px; line-height: 1;
-    }
-    .del-btn:active { transform: scale(0.9); }
-    tr.dup td, td.dupcell { background: rgba(248, 113, 113, 0.14); }
+    .total-val { border-bottom: 1px dotted var(--muted); cursor: help; font-weight: 600; }
+    .total-val.zero { color: var(--muted); font-weight: 400; border-bottom: none; cursor: default; }
     .msg { text-align: center; font-size: 0.9rem; margin: 12px 0; min-height: 1.2em; }
     .msg.ok { color: var(--ok); }
     .msg.err { color: var(--err); }
-    /* In-app confirm modal */
-    .overlay {
-      position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6);
-      display: flex; align-items: center; justify-content: center;
-      padding: 24px; z-index: 100;
-    }
-    .modal {
-      background: var(--card); border: 1px solid var(--border);
-      border-radius: 14px; padding: 20px; width: 100%; max-width: 360px;
-    }
-    .modal-title { font-weight: 700; margin-bottom: 10px; }
-    .modal-body { color: var(--text); font-size: 0.9rem; white-space: pre-line; margin-bottom: 18px; }
-    .modal-actions { display: flex; gap: 8px; }
-    .modal-actions button { flex: 1; }
-    .btn-danger {
-      background: var(--err); color: #2a0505; border: none;
-      border-radius: 10px; padding: 12px; font-weight: 700; cursor: pointer;
-    }
-    .btn-cancel {
-      background: var(--field); color: var(--text); border: 1px solid var(--border);
-      border-radius: 10px; padding: 12px; font-weight: 600; cursor: pointer;
-    }
   </style>
 </head>
 <body>
@@ -169,7 +153,7 @@
         <a class="tnode" href="supplement-tracker.html"><span class="tw-sp"></span>Tablet Ingredient Updater</a>
         <a class="tnode" href="bmi-history.html"><span class="tw-sp"></span>⚖️ BMI/BMR History</a>
         <a class="tnode" href="time-history.html"><span class="tw-sp"></span>☀️ Time History</a>
-        <a class="tnode" href="alcohol-history.html"><span class="tw-sp"></span>🍸 Alcohol History</a>
+        <a class="tnode active" href="alcohol-history.html"><span class="tw-sp"></span>🍸 Alcohol History</a>
       </div>
       <div class="tfolder tnode collapsed" data-group="g-temp"><span class="tw">▾</span>🗓️ Temporary</div>
       <div class="tchildren collapsed" id="g-temp">
@@ -193,7 +177,7 @@
 
   <div class="topbar">
     <button class="hamburger" id="navToggle" aria-label="Open menu">☰</button>
-    <span class="topbar-title">🩺 Health Log - All Data</span>
+    <span class="topbar-title">🍸 Alcohol History</span>
     <button class="link-btn" id="logoutBtn">Log out</button>
   </div>
 
@@ -202,33 +186,32 @@
 
       <section class="field">
         <div class="data-head">
-          <h2>All data</h2>
+          <h2>Standard drinks per day — every date</h2>
           <button class="link-btn" id="refreshBtn">↻ Refresh</button>
         </div>
+        <div class="metric-hint" style="color:var(--muted);font-size:0.82rem;margin-bottom:10px;">
+          1 standard drink = 1 shot of hard liquor, 1 serve of wine, or 1 can of beer. Dates with nothing logged show 0.
+        </div>
+        <div class="range-bar">
+          <button class="mini-btn" id="rangeLast50" data-active="1">Last 50 days</button>
+          <button class="mini-btn ghost" id="rangeAll">All data</button>
+          <label class="muted-note" for="rangeFrom">From</label>
+          <input type="date" id="rangeFrom" />
+          <label class="muted-note" for="rangeTo">To</label>
+          <input type="date" id="rangeTo" />
+          <button class="mini-btn ghost" id="rangeApply">Apply</button>
+        </div>
         <div class="msg" id="dataMsg"></div>
-        <div class="dup-note hidden" id="dupNote"></div>
         <div class="table-wrap">
           <table id="dataTable">
             <thead>
-              <tr><th>Date</th><th>Wakeup</th><th>Eat start</th><th>Eat end</th><th>Sleep</th></tr>
+              <tr><th>Date</th><th>Hard Liquor</th><th>Wine</th><th>Beer</th><th>Total</th></tr>
             </thead>
             <tbody id="dataBody"></tbody>
           </table>
         </div>
       </section>
 
-    </div>
-  </div>
-
-  <!-- In-app confirm modal -->
-  <div id="overlay" class="overlay hidden">
-    <div class="modal">
-      <div class="modal-title" id="modalTitle">Confirm</div>
-      <div class="modal-body" id="modalBody"></div>
-      <div class="modal-actions">
-        <button class="btn-cancel" id="modalCancel">Cancel</button>
-        <button class="btn-danger" id="modalOk">Delete</button>
-      </div>
     </div>
   </div>
 
@@ -240,26 +223,25 @@
     const SUPABASE_KEY = 'sb_publishable_c1BhUlrZPf2YsXW_5LdrZw_-wYh4lJM';
     const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-    // single data-access surface (HLD §9)
     const DB = {
       onAuthChange(cb) { supabase.auth.onAuthStateChange((_e, s) => cb(s)); },
       async currentSession() { const { data } = await supabase.auth.getSession(); return data.session; },
       async signOut() { await supabase.auth.signOut(); },
-      async allEvents() {
-        // Supabase/PostgREST has a server-side max-rows cap (1000 by
-        // default) that silently overrides any client .limit() above it —
-        // with years of history that drops the oldest rows. Paginate in
-        // pages of 1000 instead, so it works regardless of that setting.
+      // from/to are inclusive log_date bounds; pass null for either to leave
+      // that side open. Paginated (see time-history.html) — Supabase caps
+      // unbounded queries at 1000 rows regardless of client .limit().
+      async alcoholLogInRange(fromDate, toDate) {
         const PAGE = 1000;
         let all = [];
         let offset = 0;
         while (true) {
-          const { data, error } = await supabase
-            .from('events')
-            .select('id, aspect, title, datetime, log_date, tz, reduction_min')
-            .order('log_date', { ascending: false })
-            .order('datetime', { ascending: true })
+          let q = supabase.from('alcohol_log')
+            .select('log_date, alcohol_item, shots')
+            .order('log_date', { ascending: true })
             .range(offset, offset + PAGE - 1);
+          if (fromDate) q = q.gte('log_date', fromDate);
+          if (toDate) q = q.lte('log_date', toDate);
+          const { data, error } = await q;
           if (error) throw error;
           all = all.concat(data);
           if (data.length < PAGE) break;
@@ -267,13 +249,32 @@
         }
         return all;
       },
-      async deleteEvent(id) {
-        const { error } = await supabase.from('events').delete().eq('id', id);
+      // earliest ever alcohol_log date, for "All data"'s lower bound
+      async earliestAlcoholDate() {
+        const { data, error } = await supabase.from('alcohol_log')
+          .select('log_date').order('log_date', { ascending: true }).limit(1);
         if (error) throw error;
+        return data.length ? data[0].log_date : null;
+      },
+      // all items ever used (not just active ones — historical log rows
+      // can reference an item that's since been deactivated), for the
+      // name -> type lookup used to split totals into Hard Liquor/Wine/Beer.
+      async allAlcoholItemTypes() {
+        const { data, error } = await supabase.from('alcohol_items').select('name, type');
+        if (error) throw error;
+        const map = {};
+        for (const r of data) map[r.name] = r.type;
+        return map;
       },
     };
 
     const $ = id => document.getElementById(id);
+    const isoDate = d => d.toISOString().slice(0, 10);
+    const pad = n => String(n).padStart(2, '0');
+    const todayDate = () => {
+      const d = new Date();
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+    };
 
     // ---- side drawer nav ----
     const openNav  = () => { $('sidebar').classList.add('open'); $('navBackdrop').classList.add('open'); };
@@ -281,7 +282,6 @@
     $('navToggle').addEventListener('click', openNav);
     $('navClose').addEventListener('click', closeNav);
     $('navBackdrop').addEventListener('click', closeNav);
-    // ---- Settings badge: shows a count when unresolved dev errors exist ----
     (function updateSettingsBadge() {
       try {
         const log = JSON.parse(localStorage.getItem('dc_dev_errors') || '[]');
@@ -308,133 +308,124 @@
       el.className = 'msg' + (kind ? ' ' + kind : '');
     }
 
-    // In-app confirm dialog → resolves true (ok) / false (cancel).
-    function confirmModal(body, { title = 'Confirm', okText = 'Delete' } = {}) {
-      return new Promise(resolve => {
-        $('modalTitle').textContent = title;
-        $('modalBody').textContent = body;
-        $('modalOk').textContent = okText;
-        $('overlay').classList.remove('hidden');
-        const done = (val) => {
-          $('overlay').classList.add('hidden');
-          $('modalOk').onclick = null;
-          $('modalCancel').onclick = null;
-          resolve(val);
-        };
-        $('modalOk').onclick = () => done(true);
-        $('modalCancel').onclick = () => done(false);
+    // Every calendar date from `from` to `to` inclusive, newest first —
+    // unlike other history pages, dates with zero entries still get a row
+    // (0 drinks), not omitted.
+    function dateRangeDesc(from, to) {
+      const out = [];
+      const start = new Date(from + 'T00:00:00');
+      const end = new Date(to + 'T00:00:00');
+      for (let d = new Date(end); d >= start; d.setDate(d.getDate() - 1)) {
+        out.push(isoDate(d));
+      }
+      return out;
+    }
+
+    // name -> type ('Hard Liquor' | 'Wine' | 'Beer') for every item ever
+    // logged, loaded once — see DB.allAlcoholItemTypes.
+    let itemTypes = {};
+    const typeOf = name => itemTypes[name] || 'Other';
+
+    function cell(count, tip) {
+      if (!count) return '<td><span class="total-val zero">0</span></td>';
+      return `<td><span class="total-val" title="${tip.replace(/"/g, '&quot;')}">${count}</span></td>`;
+    }
+
+    function renderRow(dateStr, dayRows) {
+      const dateLabel = new Date(`${dateStr}T00:00`)
+        .toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
+      const byType = { 'Hard Liquor': [], 'Wine': [], 'Beer': [], 'Other': [] };
+      let total = 0;
+      for (const r of dayRows) {
+        const t = typeOf(r.alcohol_item);
+        (byType[t] || (byType[t] = [])).push(r);
+        total += r.shots || 0;
+      }
+      const sumOf = list => list.reduce((s, r) => s + (r.shots || 0), 0);
+      const tipOf = list => list.map(r => `${r.alcohol_item}: ${r.shots}`).join('\n');
+      const totalTip = tipOf(dayRows);
+      return `<tr>
+        <td>${dateLabel}</td>
+        ${cell(sumOf(byType['Hard Liquor']), tipOf(byType['Hard Liquor']))}
+        ${cell(sumOf(byType['Wine']), tipOf(byType['Wine']))}
+        ${cell(sumOf(byType['Beer']), tipOf(byType['Beer']))}
+        ${cell(total, totalTip)}
+      </tr>`;
+    }
+
+    function renderTable(from, to, rows) {
+      const body = $('dataBody');
+      const byDate = {};
+      for (const r of rows) (byDate[r.log_date] = byDate[r.log_date] || []).push(r);
+      const dates = dateRangeDesc(from, to);
+      if (!dates.length) { body.innerHTML = '<tr><td colspan="5">Nothing yet.</td></tr>'; return; }
+      body.innerHTML = dates.map(d => renderRow(d, byDate[d] || [])).join('');
+    }
+
+    // currentRange.from/to always resolved to concrete dates (never null) —
+    // every-date zero-fill needs real bounds to iterate over.
+    let currentRange = { from: null, to: null };
+
+    function setActiveQuickBtn(id) {
+      ['rangeLast50', 'rangeAll'].forEach(btnId => {
+        if (btnId === id) $(btnId).dataset.active = '1';
+        else delete $(btnId).dataset.active;
       });
     }
-
-    // Time zones: display-only here (read the shared default; no switcher —
-    // this is a read-only history view, not an entry form).
-    const TZ_KEY = 'dc_tz';
-    const detectedTz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-    const currentTz = localStorage.getItem(TZ_KEY) || detectedTz;
-    // 3-letter zone code (EST/EDT/IST/…), correct for the specific date —
-    // Toronto's abbreviation flips across DST, so "now" wouldn't be right
-    // for historical entries.
-    const ZONE_ABBR_OVERRIDE = { 'Asia/Calcutta': 'IST', 'Asia/Kolkata': 'IST' };
-    function shortZone(tz, atIso) {
-      if (ZONE_ABBR_OVERRIDE[tz]) return ZONE_ABBR_OVERRIDE[tz];
-      try {
-        const p = new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'short' })
-          .formatToParts(atIso ? new Date(atIso) : new Date()).find(x => x.type === 'timeZoneName');
-        return p ? p.value : (tz || '');
-      } catch { return tz || ''; }
+    function last50Range() {
+      const to = new Date();
+      const from = new Date(to.getTime() - 49 * 86400000);
+      return { from: isoDate(from), to: isoDate(to) };
     }
-    function fmtWhen(iso, tz = currentTz) {
-      return new Date(iso).toLocaleString(undefined,
-        { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: tz });
-    }
-    const pad = n => String(n).padStart(2, '0');
-    const dayKey = iso => {
-      const d = new Date(iso);
-      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-    };
 
-    const FIELDS = [
-      { id: 'wakeup',    label: 'Wakeup' },
-      { id: 'eat_start', label: 'Eating start' },
-      { id: 'eat_end',   label: 'Eating end' },
-      { id: 'sleep',     label: 'Sleep' },
-    ];
-
-    // One row per day; columns Date | Wakeup | Eat start | Eat end | Sleep.
-    async function renderDataTable() {
-      const rows = await DB.allEvents();
-      const body = $('dataBody');
-      body.innerHTML = '';
-      if (!rows.length) {
-        body.innerHTML = '<tr><td colspan="5">Nothing yet.</td></tr>';
-        $('dupNote').classList.add('hidden');
-        return;
-      }
-      // group by log day → { aspect: [rows] }
-      const days = {};
-      for (const r of rows) {
-        const k = r.log_date || dayKey(r.datetime);   // fallback for old rows
-        (days[k] = days[k] || {});
-        (days[k][r.aspect] = days[k][r.aspect] || []).push(r);
-      }
-      let dupCount = 0;
-      const cell = list => {
-        if (!list || !list.length) return '<td class="no-data">No data available</td>';
-        const dup = list.length > 1;
-        if (dup) dupCount++;
-        const inner = list.map(r => {
-          const z = r.tz || currentTz;
-          const tag = ` <span class="zone-tag">${shortZone(z, r.datetime)}</span>`;
-          return `${fmtWhen(r.datetime, z)}${tag} <button class="del-btn" data-id="${r.id}" title="Delete">✕</button>`;
-        }).join('<br>');
-        return `<td class="${dup ? 'dupcell' : ''}">${dup ? '⚠ ' : ''}${inner}</td>`;
-      };
-      for (const k of Object.keys(days).sort().reverse()) {
-        const d = days[k];
-        const dateLabel = new Date(`${k}T00:00`)
-          .toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${dateLabel}</td>` + FIELDS.map(f => cell(d[f.id])).join('');
-        body.appendChild(tr);
-      }
-      const note = $('dupNote');
-      if (dupCount) {
-        note.textContent = '⚠ Some days have more than one of the same entry. Remove extras with ✕.';
-        note.classList.remove('hidden');
-      } else {
-        note.classList.add('hidden');
-      }
+    async function loadRows() {
+      const rows = await DB.alcoholLogInRange(currentRange.from, currentRange.to);
+      renderTable(currentRange.from, currentRange.to, rows);
     }
 
     $('refreshBtn').addEventListener('click', async () => {
       $('refreshBtn').disabled = true;
-      try { await renderDataTable(); }
+      try { await loadRows(); }
       catch (e) { dataMsg('Refresh failed: ' + e.message, 'err'); }
       finally { $('refreshBtn').disabled = false; }
     });
 
-    // Delete a cell entry (event delegation on the table body)
-    $('dataBody').addEventListener('click', async (e) => {
-      const btn = e.target.closest('.del-btn');
-      if (!btn) return;
-      const ok = await confirmModal('Delete this entry? Cannot undo.',
-        { title: 'Delete', okText: 'Delete' });
-      if (!ok) return;
-      btn.disabled = true;
+    $('rangeLast50').addEventListener('click', async () => {
+      currentRange = last50Range();
+      $('rangeFrom').value = currentRange.from;
+      $('rangeTo').value = currentRange.to;
+      setActiveQuickBtn('rangeLast50');
+      try { await loadRows(); } catch (e) { dataMsg('Could not load: ' + e.message, 'err'); }
+    });
+    $('rangeAll').addEventListener('click', async () => {
+      $('rangeAll').disabled = true;
       try {
-        await DB.deleteEvent(btn.dataset.id);
-        await renderDataTable();
-      } catch (err) {
-        btn.disabled = false;
-        dataMsg('Delete failed: ' + err.message, 'err');
-      }
+        const earliest = await DB.earliestAlcoholDate();
+        currentRange = { from: earliest || todayDate(), to: todayDate() };
+        $('rangeFrom').value = currentRange.from;
+        $('rangeTo').value = currentRange.to;
+        setActiveQuickBtn('rangeAll');
+        await loadRows();
+      } catch (e) { dataMsg('Could not load: ' + e.message, 'err'); }
+      finally { $('rangeAll').disabled = false; }
+    });
+    $('rangeApply').addEventListener('click', async () => {
+      if (!$('rangeFrom').value || !$('rangeTo').value) { dataMsg('Pick both From and To.', 'err'); return; }
+      currentRange = { from: $('rangeFrom').value, to: $('rangeTo').value };
+      setActiveQuickBtn(null);
+      try { await loadRows(); } catch (e) { dataMsg('Could not load: ' + e.message, 'err'); }
     });
 
     // ---- route: no session → sign in on the picker page ----
     function showLogin() { window.location.replace('index.html'); }
     async function showApp() {
       $('appView').classList.remove('hidden');
-      try { await renderDataTable(); }
+      currentRange = last50Range();
+      $('rangeFrom').value = currentRange.from;
+      $('rangeTo').value = currentRange.to;
+      try { itemTypes = await DB.allAlcoholItemTypes(); }
+      catch { /* type split is optional — counts just land in "Other" */ }
+      try { await loadRows(); }
       catch (e) { dataMsg('Could not load: ' + e.message, 'err'); }
     }
 
