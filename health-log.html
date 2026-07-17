@@ -412,6 +412,8 @@
         <a class="tnode active" href="health-log.html"><span class="tw-sp"></span>Data Entry</a>
         <a class="tnode" href="supplement-tracker.html"><span class="tw-sp"></span>Tablet Ingredient Updater</a>
         <a class="tnode" href="all-data.html"><span class="tw-sp"></span>All Data</a>
+        <a class="tnode" href="bmi-history.html"><span class="tw-sp"></span>⚖️ BMI/BMR History</a>
+        <a class="tnode" href="time-history.html"><span class="tw-sp"></span>☀️ Time History</a>
       </div>
       <div class="tfolder tnode collapsed" data-group="g-temp"><span class="tw">▾</span>🗓️ Temporary</div>
       <div class="tchildren collapsed" id="g-temp">
@@ -453,7 +455,7 @@
       <nav class="jump-tabs" aria-label="Jump to section">
         <button type="button" class="jump-tab" data-jump="sectionSummary">📋 Summary</button>
         <button type="button" class="jump-tab" data-jump="sectionTime">☀️ Time</button>
-        <button type="button" class="jump-tab" data-jump="sectionBmi">⚖️ BMI</button>
+        <button type="button" class="jump-tab" data-jump="sectionBmi">⚖️ BMI/BMR</button>
         <button type="button" class="jump-tab" data-jump="sectionFood">🍎 Food</button>
         <button type="button" class="jump-tab" data-jump="sectionMeal">🍽️ Meal</button>
         <button type="button" class="jump-tab" data-jump="sectionMstbn">📊 Mstbn</button>
@@ -509,7 +511,7 @@
           <div class="msg" id="saveMsg"></div>
 
           <div class="field jump-target" id="sectionBmi">
-            <div class="field-head"><span class="icon">⚖️</span><span class="label">Weight / BMI</span></div>
+            <div class="field-head"><span class="icon">⚖️</span><span class="label">Weight / BMI / BMR</span></div>
             <div class="row">
               <input type="number" step="0.1" id="weightInput" placeholder="Weight" />
               <select class="unit-select" id="weightUnit" aria-label="Weight unit">
@@ -524,7 +526,29 @@
                 <option value="in">in</option>
               </select>
             </div>
+            <div class="row" style="margin-top:8px;">
+              <input type="number" step="0.1" id="waistInput" placeholder="Waist (cm)" />
+              <input type="number" step="0.1" id="hipInput" placeholder="Hip (cm)" />
+            </div>
             <div id="bmiResult" class="fasting-val" style="margin-top:8px;">—</div>
+
+            <div class="crs-toolbar">
+              <button class="mini-btn ghost" id="profileToggle">＋ Profile (for BMR)</button>
+            </div>
+            <div id="profileFormMsg" class="crs-msg"></div>
+            <div id="profileForm" class="crs-form hidden">
+              <label class="muted-note" for="pfDob">Date of birth</label>
+              <input type="date" id="pfDob" />
+              <label class="muted-note" for="pfSex">Sex</label>
+              <select id="pfSex">
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+              </select>
+              <div class="btn-row">
+                <button class="mini-btn" id="pfSave">Save</button>
+                <button class="mini-btn ghost" id="pfCancel">Cancel</button>
+              </div>
+            </div>
           </div>
 
           <div class="field jump-target" id="sectionFood">
@@ -807,6 +831,20 @@
         if (error) throw error;
         return data.length ? data[0].datetime : null;
       },
+      // latest datetime for an aspect strictly before a given instant, else
+      // null — used for fasting window (last eat_end before a given
+      // eat_start, which may be from an earlier day).
+      async lastEventBefore(aspect, beforeIso) {
+        const { data, error } = await supabase
+          .from('events')
+          .select('datetime')
+          .eq('aspect', aspect)
+          .lt('datetime', beforeIso)
+          .order('datetime', { ascending: false })
+          .limit(1);
+        if (error) throw error;
+        return data.length ? data[0].datetime : null;
+      },
       // latest datetime + reduction_min for an aspect, else null (used for wakeup)
       async lastEventWithReduction(aspect) {
         const { data, error } = await supabase
@@ -926,7 +964,7 @@
       // ---- Weight / BMI (canonical units: kg, cm) ----
       async bodyMetricsForDate(log_date) {
         const { data, error } = await supabase.from('body_metrics')
-          .select('weight_kg, height_cm').eq('log_date', log_date).maybeSingle();
+          .select('weight_kg, height_cm, waist_cm, hip_cm').eq('log_date', log_date).maybeSingle();
         if (error) throw error;
         return data;
       },
@@ -938,14 +976,28 @@
         if (error) throw error;
         return data.length ? data[0].height_cm : null;
       },
-      async bodyMetricsSet(log_date, weight_kg, height_cm) {
+      async bodyMetricsSet(log_date, weight_kg, height_cm, waist_cm, hip_cm) {
         const { error } = await supabase.from('body_metrics').upsert({
           log_date, weight_kg: weight_kg ?? null, height_cm: height_cm ?? null,
+          waist_cm: waist_cm ?? null, hip_cm: hip_cm ?? null,
         }, { onConflict: 'log_date' });
         if (error) throw error;
       },
       async bodyMetricsDelete(log_date) {
         const { error } = await supabase.from('body_metrics').delete().eq('log_date', log_date);
+        if (error) throw error;
+      },
+      // ---- Profile (one-time setting: DOB + sex, for BMR) ----
+      async profileGet() {
+        const { data, error } = await supabase.from('user_profile')
+          .select('date_of_birth, sex').eq('id', 1).maybeSingle();
+        if (error) throw error;
+        return data;
+      },
+      async profileSet(date_of_birth, sex) {
+        const { error } = await supabase.from('user_profile').upsert({
+          id: 1, date_of_birth: date_of_birth || null, sex: sex || null,
+        }, { onConflict: 'id' });
         if (error) throw error;
       },
       // ---- Food Log (manageable item list, float qty per day) ----
@@ -1230,6 +1282,13 @@
       if (bmi < 30) return 'Overweight';
       return 'Obese';
     }
+    // General (non-sex-specific) WHR risk bands — WHO splits these by sex,
+    // which isn't tracked here, so this is an approximation.
+    function whrCategory(whr) {
+      if (whr < 0.85) return 'Low risk';
+      if (whr <= 0.95) return 'Moderate risk';
+      return 'High risk';
+    }
     function computeBmi() {
       const w = parseFloat($('weightInput').value);
       const h = parseFloat($('heightInput').value);
@@ -1238,12 +1297,81 @@
       const m = heightToCm(h, heightUnit) / 100;
       return kg / (m * m);
     }
+    function computeWhr() {
+      const waist = parseFloat($('waistInput').value);
+      const hip = parseFloat($('hipInput').value);
+      if (!waist || !hip) return null;
+      return waist / hip;
+    }
+    // Profile is a one-time setting (DOB + sex) — loaded once, not staged/
+    // diffed like the daily fields.
+    let profile = { date_of_birth: null, sex: null };
+    // Age as of a specific date (not always "today") so BMR stays correct
+    // when looking at a past log date, not just the current one.
+    function ageAt(dob, atDateStr) {
+      if (!dob) return null;
+      const b = new Date(dob + 'T00:00:00');
+      const a = new Date((atDateStr || todayDate()) + 'T00:00:00');
+      let age = a.getFullYear() - b.getFullYear();
+      const m = a.getMonth() - b.getMonth();
+      if (m < 0 || (m === 0 && a.getDate() < b.getDate())) age--;
+      return age;
+    }
+    // Mifflin-St Jeor. Uses whatever weight/height is on the form right now,
+    // combined with the one-time profile (age computed as of the selected
+    // log date) and computed live, same as BMI/WHR — never stored.
+    function computeBmr() {
+      const w = parseFloat($('weightInput').value);
+      const h = parseFloat($('heightInput').value);
+      if (!w || !h || !profile.date_of_birth || !profile.sex) return null;
+      const kg = weightToKg(w, weightUnit);
+      const cm = heightToCm(h, heightUnit);
+      const age = ageAt(profile.date_of_birth, $('topbarLogDate').value);
+      if (age == null) return null;
+      const base = 10 * kg + 6.25 * cm - 5 * age;
+      return profile.sex === 'female' ? base - 161 : base + 5;
+    }
     function updateBmiDisplay() {
       const bmi = computeBmi();
-      $('bmiResult').textContent = bmi ? `${bmi.toFixed(1)} — ${bmiCategory(bmi)}` : '—';
+      const whr = computeWhr();
+      const bmr = computeBmr();
+      const parts = [];
+      if (bmi) parts.push(`BMI ${bmi.toFixed(1)} — ${bmiCategory(bmi)}`);
+      if (whr) parts.push(`WHR ${whr.toFixed(2)} — ${whrCategory(whr)}`);
+      if (bmr) parts.push(`BMR ${Math.round(bmr)} kcal/day`);
+      $('bmiResult').textContent = parts.length ? parts.join(' · ') : '—';
     }
     $('weightInput').addEventListener('input', updateBmiDisplay);
     $('heightInput').addEventListener('input', updateBmiDisplay);
+    $('waistInput').addEventListener('input', updateBmiDisplay);
+    $('hipInput').addEventListener('input', updateBmiDisplay);
+
+    function profileFormMsg(text, kind) {
+      const el = $('profileFormMsg'); el.textContent = text || '';
+      el.className = 'crs-msg' + (kind ? ' ' + kind : '');
+    }
+    $('profileToggle').addEventListener('click', () => {
+      $('profileForm').classList.toggle('hidden');
+      if (!$('profileForm').classList.contains('hidden')) {
+        $('pfDob').value = profile.date_of_birth || '';
+        $('pfSex').value = profile.sex || 'male';
+        profileFormMsg('', '');
+      }
+    });
+    $('pfCancel').addEventListener('click', () => $('profileForm').classList.add('hidden'));
+    $('pfSave').addEventListener('click', async () => {
+      $('pfSave').disabled = true;
+      profileFormMsg('Saving…', '');
+      try {
+        await DB.profileSet($('pfDob').value, $('pfSex').value);
+        profile = { date_of_birth: $('pfDob').value || null, sex: $('pfSex').value || null };
+        $('profileForm').classList.add('hidden');
+        profileFormMsg('', '');
+        updateBmiDisplay();
+      } catch (e) {
+        profileFormMsg('Save failed: ' + (e.message || ''), 'err');
+      } finally { $('pfSave').disabled = false; }
+    });
     $('weightUnit').value = weightUnit;
     $('heightUnit').value = heightUnit;
     $('weightUnit').addEventListener('change', () => {
@@ -1268,10 +1396,16 @@
     // the Weight/BMI row in the Selected date card.
     let loadedWeightKg = null;
     let loadedHeightCm = null;
+    let loadedWaistCm = null;
+    let loadedHipCm = null;
     async function loadBodyMetrics(logDate) {
       $('weightInput').value = '';
+      $('waistInput').value = '';
+      $('hipInput').value = '';
       loadedWeightKg = null;
       loadedHeightCm = null;
+      loadedWaistCm = null;
+      loadedHipCm = null;
       if (!logDate) { updateBmiDisplay(); updateDirtyIndicator(); return; }
       try {
         const row = await DB.bodyMetricsForDate(logDate);
@@ -1288,6 +1422,14 @@
           // treat the auto-filled default as the baseline — it's not a change
           // until the user actually edits it away from the suggested value
           loadedHeightCm = round1(heightToCm(parseFloat($('heightInput').value), heightUnit));
+        }
+        if (row && row.waist_cm != null) {
+          loadedWaistCm = row.waist_cm;
+          $('waistInput').value = row.waist_cm;
+        }
+        if (row && row.hip_cm != null) {
+          loadedHipCm = row.hip_cm;
+          $('hipInput').value = row.hip_cm;
         }
         updateBmiDisplay();
         updateDirtyIndicator();
@@ -1599,17 +1741,24 @@
     // ================================================================
     // App view
     // ================================================================
-    // Fasting window = time elapsed since the last recorded eat_end (live)
+    // Fasting window, for the selected date: eat_start for that date minus
+    // whatever eat_end most recently preceded it (often the day before, or
+    // even earlier — not necessarily same-day). If eat_start hasn't been
+    // logged yet for that date, use the current time as a live, still-
+    // counting endpoint instead.
     const FAST_GOAL_MIN = 16 * 60;   // 16h target
     let lastEatEnd = null;
+    let fastingEatStart = null;   // ISO instant the window is measured up to
+    let fastingIsLive = false;    // true when using "now" (eat_start not logged yet)
     function updateFasting() {
       const el = $('fasting'), bar = $('fastingBar'), pctEl = $('fastingPct');
-      if (!lastEatEnd) {
+      if (!lastEatEnd || !fastingEatStart) {
         el.textContent = '—'; bar.style.width = '0'; bar.classList.remove('full');
         pctEl.textContent = ''; return;
       }
-      let mins = (Date.now() - new Date(lastEatEnd)) / 60000;
-      if (mins < 0) mins = 0;
+      const endPoint = fastingIsLive ? Date.now() : new Date(fastingEatStart).getTime();
+      let mins = (endPoint - new Date(lastEatEnd)) / 60000;
+      if (mins < 0) mins = 0;   // eat_start should always be after the prior eat_end
       el.textContent = `${Math.floor(mins / 60)}h ${Math.round(mins % 60)}m`;
       const pct = Math.round(mins / FAST_GOAL_MIN * 100);
       bar.style.width = Math.min(100, pct) + '%';     // bar caps at full
@@ -1617,7 +1766,12 @@
       pctEl.textContent = `${pct}% of 16h`;            // percent keeps climbing
     }
     async function refreshFasting() {
-      try { lastEatEnd = await DB.lastEatEnd(); } catch { /* ignore */ }
+      try {
+        const startRow = lastDayRows.find(r => r.aspect === 'eat_start');
+        fastingIsLive = !startRow;
+        fastingEatStart = startRow ? startRow.datetime : new Date().toISOString();
+        lastEatEnd = await DB.lastEventBefore('eat_end', fastingEatStart);
+      } catch { /* ignore */ }
       updateFasting();
     }
 
@@ -1685,8 +1839,12 @@
         const hDisp = `${round1(heightFromCm(loadedHeightCm, heightUnit))} ${heightUnit}`;
         const m = loadedHeightCm / 100;
         const bmi = loadedWeightKg / (m * m);
-        const bmiText = ` · BMI ${bmi.toFixed(1)} (${bmiCategory(bmi)})`;
-        bmiRow = `<li><span>Weight / BMI</span><span class="when">${wDisp} / ${hDisp}${bmiText} <button class="edit-btn" data-edit-bmi title="Edit">✎</button> <button class="del-btn" data-del-bmi title="Delete">✕</button></span></li>`;
+        let extra = ` · BMI ${bmi.toFixed(1)} (${bmiCategory(bmi)})`;
+        if (loadedWaistCm != null && loadedHipCm != null) {
+          const whr = loadedWaistCm / loadedHipCm;
+          extra += ` · Waist ${loadedWaistCm}cm / Hip ${loadedHipCm}cm · WHR ${whr.toFixed(2)} (${whrCategory(whr)})`;
+        }
+        bmiRow = `<li><span>Weight / BMI</span><span class="when">${wDisp} / ${hDisp}${extra} <button class="edit-btn" data-edit-bmi title="Edit">✎</button> <button class="del-btn" data-del-bmi title="Delete">✕</button></span></li>`;
       }
       const foodRows = Object.entries(loadedFood)
         .filter(([, qty]) => qty != null)
@@ -1879,7 +2037,7 @@
       TZ_FIELDS.forEach(id => { if ($('tz_' + id)) $('tz_' + id).value = currentTz; });  // reset zones to default
       $('wakeupRedH').value = ''; $('wakeupRedM').value = '';
       loadedValues = {};
-      if (!logDate) { lastDayRows = []; renderSelectedDate(); updateDirtyIndicator(); return; }
+      if (!logDate) { lastDayRows = []; renderSelectedDate(); updateDirtyIndicator(); await refreshFasting(); return; }
       try {
         const rows = await DB.dayEvents(logDate);
         for (const r of rows) {
@@ -1900,6 +2058,7 @@
         renderSelectedDate();
         msg($('saveMsg'), rows.length ? `Loaded ${logDate}.` : '', 'ok');
         updateDirtyIndicator();
+        await refreshFasting();
       } catch (e) {
         msg($('saveMsg'), 'Could not load day: ' + e.message, 'err');
       }
@@ -2209,9 +2368,14 @@
         [...pendingLog.entries()].some(([name, qty]) => originalLog.get(name) !== qty);
       const weightRaw = parseFloat($('weightInput').value);
       const heightRaw = parseFloat($('heightInput').value);
+      const waistRaw = parseFloat($('waistInput').value);
+      const hipRaw = parseFloat($('hipInput').value);
       const bmiWeightKg = isNaN(weightRaw) ? null : round1(weightToKg(weightRaw, weightUnit));
       const bmiHeightCm = isNaN(heightRaw) ? null : round1(heightToCm(heightRaw, heightUnit));
-      const bmiChanged = bmiWeightKg !== loadedWeightKg || bmiHeightCm !== loadedHeightCm;
+      const bmiWaistCm = isNaN(waistRaw) ? null : round1(waistRaw);
+      const bmiHipCm = isNaN(hipRaw) ? null : round1(hipRaw);
+      const bmiChanged = bmiWeightKg !== loadedWeightKg || bmiHeightCm !== loadedHeightCm
+        || bmiWaistCm !== loadedWaistCm || bmiHipCm !== loadedHipCm;
       // Food Log: per-item diff against loadedFood (blank input = "not logged").
       const foodToSet = [];
       const foodToClear = [];
@@ -2248,7 +2412,7 @@
         k => (moneyFields[k] ?? null) !== (loadedMoney[k] ?? null)
       );
       const dirty = toSave.length > 0 || logChanged || bmiChanged || foodChanged || mealChanged || countsChanged || moneyChanged;
-      return { filled, toSave, logToUpsert, logToClear, bmiWeightKg, bmiHeightCm, bmiChanged, foodToSet, foodToClear, foodChanged, mealFields, mealChanged, countsFields, countsChanged, moneyFields, moneyChanged, dirty };
+      return { filled, toSave, logToUpsert, logToClear, bmiWeightKg, bmiHeightCm, bmiWaistCm, bmiHipCm, bmiChanged, foodToSet, foodToClear, foodChanged, mealFields, mealChanged, countsFields, countsChanged, moneyFields, moneyChanged, dirty };
     }
     // Reflects unsaved changes on the topbar Save button (label + color).
     function updateDirtyIndicator() {
@@ -2261,11 +2425,13 @@
     $('wakeupRedM').addEventListener('input', updateDirtyIndicator);
     $('weightInput').addEventListener('input', updateDirtyIndicator);
     $('heightInput').addEventListener('input', updateDirtyIndicator);
+    $('waistInput').addEventListener('input', updateDirtyIndicator);
+    $('hipInput').addEventListener('input', updateDirtyIndicator);
 
     $('saveBtn').addEventListener('click', async () => {
       const logDate = $('topbarLogDate').value;         // the log day (YYYY-MM-DD)
       if (!logDate) { msg($('saveMsg'), 'Pick the log date at top.', 'err'); return; }
-      const { filled, toSave, logToUpsert, logToClear, bmiWeightKg, bmiHeightCm, bmiChanged, foodToSet, foodToClear, foodChanged, mealFields, mealChanged, countsFields, countsChanged, moneyFields, moneyChanged } = getPendingChanges();
+      const { filled, toSave, logToUpsert, logToClear, bmiWeightKg, bmiHeightCm, bmiWaistCm, bmiHipCm, bmiChanged, foodToSet, foodToClear, foodChanged, mealFields, mealChanged, countsFields, countsChanged, moneyFields, moneyChanged } = getPendingChanges();
 
       if (!filled.length && !logToUpsert.length && !logToClear.length && !bmiChanged && !foodChanged && !mealChanged && !countsChanged && !moneyChanged) {
         msg($('saveMsg'), 'Fill at least one field or add a tablet to the log.', 'err'); return;
@@ -2314,13 +2480,15 @@
         if (logToUpsert.length || logToClear.length) originalLog = new Map(pendingLog);
 
         if (bmiChanged) {
-          if (bmiWeightKg == null && bmiHeightCm == null) {
+          if (bmiWeightKg == null && bmiHeightCm == null && bmiWaistCm == null && bmiHipCm == null) {
             await DB.bodyMetricsDelete(logDate);
           } else {
-            await DB.bodyMetricsSet(logDate, bmiWeightKg, bmiHeightCm);
+            await DB.bodyMetricsSet(logDate, bmiWeightKg, bmiHeightCm, bmiWaistCm, bmiHipCm);
           }
           loadedWeightKg = bmiWeightKg;
           loadedHeightCm = bmiHeightCm;
+          loadedWaistCm = bmiWaistCm;
+          loadedHipCm = bmiHipCm;
         }
 
         for (const { name, qty } of foodToSet) {
@@ -2372,10 +2540,10 @@
         FIELDS.forEach(f => { $(f.id).value = ''; });
         $('wakeupRedH').value = ''; $('wakeupRedM').value = '';
         loadedValues = {};
+        lastDayRows = await DB.dayEvents(logDate).catch(() => []);
         await refreshFasting();
         await refreshSleepLast();
         await loadStats();
-        lastDayRows = await DB.dayEvents(logDate).catch(() => []);
         renderFoodItemsList();
         renderMealCompare();
         renderSelectedDate();
@@ -2450,7 +2618,6 @@
         await loadDailyCounts($('topbarLogDate').value);
         await loadMoneyLog($('topbarLogDate').value);
         await loadStats();
-        await refreshFasting();
         await refreshSleepLast();
       }
       catch (e) { msg($('saveMsg'), 'Refresh failed: ' + e.message, 'err'); }
@@ -2469,6 +2636,10 @@
       updateStickyOffsets();
       if (!$('topbarLogDate').value) $('topbarLogDate').value = todayDate();
       await loadDay($('topbarLogDate').value);
+      try {
+        const p = await DB.profileGet();
+        if (p) profile = p;
+      } catch { /* profile is optional — BMR just won't show without it */ }
       await loadSupplementLog($('topbarLogDate').value);
       await loadAlcoholLog($('topbarLogDate').value);
       await loadBodyMetrics($('topbarLogDate').value);
@@ -2476,7 +2647,6 @@
       await loadMealLog($('topbarLogDate').value);
       await loadDailyCounts($('topbarLogDate').value);
       await loadMoneyLog($('topbarLogDate').value);
-      await refreshFasting();
       await refreshSleepLast();
       await loadStats();
     }

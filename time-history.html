@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>Health Log - All Data — Daily Compass</title>
+  <title>Health Log - Time History — Daily Compass</title>
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
@@ -38,7 +38,7 @@
       align-items: center;
       padding-bottom: 48px;
     }
-    .wrap { width: 100%; max-width: 1000px; padding: 20px 20px 0; }
+    .wrap { width: 100%; max-width: 1600px; padding: 20px 12px 0; }
     .field {
       background: var(--card); border: 1px solid var(--border);
       border-radius: 14px; padding: 16px; margin-bottom: 14px;
@@ -57,6 +57,18 @@
     .link-btn {
       background: none; border: none; color: var(--accent);
       cursor: pointer; font-size: 0.8rem; padding: 0; text-decoration: none;
+    }
+    .range-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; }
+    .muted-note { color: var(--muted); font-size: 0.82rem; }
+    .mini-btn {
+      background: var(--accent); color: #06202e; border: none;
+      border-radius: 8px; padding: 7px 12px; font-size: 0.82rem; font-weight: 600; cursor: pointer;
+    }
+    .mini-btn.ghost { background: var(--field); color: var(--text); border: 1px solid var(--border); }
+    .mini-btn[data-active="1"] { outline: 2px solid var(--accent); outline-offset: 1px; }
+    .range-bar input[type="date"] {
+      background: var(--field); border: 1px solid var(--border); color: var(--text);
+      border-radius: 8px; padding: 6px 8px; font-size: 0.82rem; color-scheme: dark;
     }
     /* ---- side drawer nav ---- */
     .hamburger {
@@ -116,16 +128,35 @@
        with a correctly-behaving sticky header. */
     .table-wrap { overflow: auto; max-height: 75vh; margin-top: 8px; }
     table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); white-space: nowrap; vertical-align: top; line-height: 1.7; }
+    th:last-child, td:last-child { border-right: none; }
     th { color: var(--muted); font-weight: 600; background: var(--card); position: sticky; top: 0; }
+    /* Date column frozen too, so scrolling right through the extra columns
+       (Reduction/Fasting window/Sleep duration) on narrow screens doesn't
+       lose track of which day a row belongs to. */
+    th:first-child, td:first-child { position: sticky; left: 0; z-index: 2; background: var(--card); }
+    th:first-child { z-index: 3; }
     .zone-tag { color: var(--muted); font-size: 0.72rem; }
     .no-data { color: var(--muted); font-style: italic; }
-    .del-btn {
-      background: none; border: none; color: var(--err);
-      cursor: pointer; font-size: 1rem; padding: 0 4px; line-height: 1;
+    .calc-val { border-bottom: 1px dotted var(--muted); cursor: help; }
+    .entry-row { display: flex; align-items: center; gap: 4px; margin-bottom: 6px; }
+    .entry-row:last-child { margin-bottom: 0; }
+    .edit-btn, .del-btn {
+      background: none; border: none; cursor: pointer; font-size: 0.95rem; padding: 0 3px; line-height: 1;
     }
-    .del-btn:active { transform: scale(0.9); }
+    .edit-btn { color: var(--accent); }
+    .del-btn { color: var(--err); }
+    .edit-btn:active, .del-btn:active { transform: scale(0.9); }
+    /* Hidden by default so opening the page can't lead to an accidental tap-
+       delete — Unlock reveals them. */
+    #dataTable.locked .edit-btn, #dataTable.locked .del-btn { display: none; }
     tr.dup td, td.dupcell { background: rgba(248, 113, 113, 0.14); }
+    .edit-form { display: flex; flex-direction: column; gap: 4px; min-width: 220px; }
+    .edit-form input, .edit-form select {
+      background: var(--field); border: 1px solid var(--border); color: var(--text);
+      border-radius: 6px; padding: 4px 6px; font-size: 0.8rem; color-scheme: dark;
+    }
+    .edit-form .btn-row { display: flex; gap: 8px; margin-top: 2px; }
     .msg { text-align: center; font-size: 0.9rem; margin: 12px 0; min-height: 1.2em; }
     .msg.ok { color: var(--ok); }
     .msg.err { color: var(--err); }
@@ -167,9 +198,9 @@
       <div class="tchildren collapsed" id="g-health">
         <a class="tnode" href="health-log.html"><span class="tw-sp"></span>Data Entry</a>
         <a class="tnode" href="supplement-tracker.html"><span class="tw-sp"></span>Tablet Ingredient Updater</a>
-        <a class="tnode active" href="all-data.html"><span class="tw-sp"></span>All Data</a>
+        <a class="tnode" href="all-data.html"><span class="tw-sp"></span>All Data</a>
         <a class="tnode" href="bmi-history.html"><span class="tw-sp"></span>⚖️ BMI/BMR History</a>
-        <a class="tnode" href="time-history.html"><span class="tw-sp"></span>☀️ Time History</a>
+        <a class="tnode active" href="time-history.html"><span class="tw-sp"></span>☀️ Time History</a>
       </div>
       <div class="tfolder tnode collapsed" data-group="g-temp"><span class="tw">▾</span>🗓️ Temporary</div>
       <div class="tchildren collapsed" id="g-temp">
@@ -192,7 +223,7 @@
 
   <div class="topbar">
     <button class="hamburger" id="navToggle" aria-label="Open menu">☰</button>
-    <span class="topbar-title">🩺 Health Log - All Data</span>
+    <span class="topbar-title">☀️ Time History</span>
     <button class="link-btn" id="logoutBtn">Log out</button>
   </div>
 
@@ -201,15 +232,27 @@
 
       <section class="field">
         <div class="data-head">
-          <h2>All data</h2>
-          <button class="link-btn" id="refreshBtn">↻ Refresh</button>
+          <h2>Wakeup / Eat / Sleep — every entry</h2>
+          <div style="display:flex; gap:14px; align-items:center;">
+            <button class="link-btn" id="unlockBtn">🔓 Unlock edit/delete</button>
+            <button class="link-btn" id="refreshBtn">↻ Refresh</button>
+          </div>
+        </div>
+        <div class="range-bar">
+          <button class="mini-btn" id="rangeLast50" data-active="1">Last 50 days</button>
+          <button class="mini-btn ghost" id="rangeAll">All data</button>
+          <label class="muted-note" for="rangeFrom">From</label>
+          <input type="date" id="rangeFrom" />
+          <label class="muted-note" for="rangeTo">To</label>
+          <input type="date" id="rangeTo" />
+          <button class="mini-btn ghost" id="rangeApply">Apply</button>
         </div>
         <div class="msg" id="dataMsg"></div>
         <div class="dup-note hidden" id="dupNote"></div>
         <div class="table-wrap">
-          <table id="dataTable">
+          <table id="dataTable" class="locked">
             <thead>
-              <tr><th>Date</th><th>Wakeup</th><th>Eat start</th><th>Eat end</th><th>Sleep</th></tr>
+              <tr><th>Date</th><th>Wakeup</th><th>Eat start</th><th>Eat end</th><th>Sleep</th><th>Reduction</th><th>Fasting window</th><th>Sleep duration</th></tr>
             </thead>
             <tbody id="dataBody"></tbody>
           </table>
@@ -239,32 +282,43 @@
     const SUPABASE_KEY = 'sb_publishable_c1BhUlrZPf2YsXW_5LdrZw_-wYh4lJM';
     const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-    // single data-access surface (HLD §9)
     const DB = {
       onAuthChange(cb) { supabase.auth.onAuthStateChange((_e, s) => cb(s)); },
       async currentSession() { const { data } = await supabase.auth.getSession(); return data.session; },
       async signOut() { await supabase.auth.signOut(); },
-      async allEvents() {
+      // from/to are inclusive log_date bounds ('YYYY-MM-DD'); pass null for
+      // either to leave that side open. Supabase caps unbounded queries at
+      // 1000 rows by default — with years of history that silently drops
+      // the oldest rows, so "all data" explicitly raises the limit instead
+      // of relying on the default.
+      async eventsInRange(fromDate, toDate) {
         // Supabase/PostgREST has a server-side max-rows cap (1000 by
         // default) that silently overrides any client .limit() above it —
-        // with years of history that drops the oldest rows. Paginate in
-        // pages of 1000 instead, so it works regardless of that setting.
+        // paginate in pages of 1000 instead, so it works regardless of that
+        // setting (matters most for "All data" and wide custom ranges).
         const PAGE = 1000;
         let all = [];
         let offset = 0;
         while (true) {
-          const { data, error } = await supabase
+          let q = supabase
             .from('events')
             .select('id, aspect, title, datetime, log_date, tz, reduction_min')
             .order('log_date', { ascending: false })
             .order('datetime', { ascending: true })
             .range(offset, offset + PAGE - 1);
+          if (fromDate) q = q.gte('log_date', fromDate);
+          if (toDate) q = q.lte('log_date', toDate);
+          const { data, error } = await q;
           if (error) throw error;
           all = all.concat(data);
           if (data.length < PAGE) break;
           offset += PAGE;
         }
         return all;
+      },
+      async updateEvent(id, fields) {
+        const { error } = await supabase.from('events').update(fields).eq('id', id);
+        if (error) throw error;
       },
       async deleteEvent(id) {
         const { error } = await supabase.from('events').delete().eq('id', id);
@@ -325,11 +379,14 @@
       });
     }
 
-    // Time zones: display-only here (read the shared default; no switcher —
-    // this is a read-only history view, not an entry form).
+    // ---- Time zones (same conversion helpers as Data Entry) ----
     const TZ_KEY = 'dc_tz';
     const detectedTz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
     const currentTz = localStorage.getItem(TZ_KEY) || detectedTz;
+    let ZONES = [];
+    try { ZONES = Intl.supportedValuesOf('timeZone'); } catch { ZONES = []; }
+    if (!ZONES.includes(detectedTz)) ZONES.unshift(detectedTz);
+    if (!ZONES.length) ZONES = [detectedTz, 'UTC'];
     // 3-letter zone code (EST/EDT/IST/…), correct for the specific date —
     // Toronto's abbreviation flips across DST, so "now" wouldn't be right
     // for historical entries.
@@ -341,6 +398,30 @@
           .formatToParts(atIso ? new Date(atIso) : new Date()).find(x => x.type === 'timeZoneName');
         return p ? p.value : (tz || '');
       } catch { return tz || ''; }
+    }
+    function tzOffsetMinutes(tz, date) {
+      const p = new Intl.DateTimeFormat('en-US', {
+        timeZone: tz, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+      }).formatToParts(date).reduce((a, x) => (a[x.type] = x.value, a), {});
+      const asUTC = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second);
+      return Math.round((asUTC - date.getTime()) / 60000);
+    }
+    function zonedToUtc(naive, tz) {
+      const [d, t] = naive.split('T');
+      const [y, mo, da] = d.split('-').map(Number);
+      const [h, mi] = t.split(':').map(Number);
+      const guess = Date.UTC(y, mo - 1, da, h, mi);
+      let off = tzOffsetMinutes(tz, new Date(guess));
+      off = tzOffsetMinutes(tz, new Date(guess - off * 60000));
+      return new Date(guess - off * 60000);
+    }
+    function isoToZonedLocal(iso, tz) {
+      const p = new Intl.DateTimeFormat('en-CA', {
+        timeZone: tz, hour12: false, year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit',
+      }).formatToParts(new Date(iso)).reduce((a, x) => (a[x.type] = x.value, a), {});
+      return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;
     }
     function fmtWhen(iso, tz = currentTz) {
       return new Date(iso).toLocaleString(undefined,
@@ -359,20 +440,92 @@
       { id: 'sleep',     label: 'Sleep' },
     ];
 
+    let allRows = [];
+    let editingId = null;
+
+    function entryHtml(r) {
+      if (editingId === r.id) {
+        const tz = r.tz || currentTz;
+        return `<div class="edit-form">
+          <input type="datetime-local" id="editDt_${r.id}" value="${isoToZonedLocal(r.datetime, tz)}" />
+          <select id="editTz_${r.id}">${ZONES.map(z => `<option value="${z}" ${z === tz ? 'selected' : ''}>${z}</option>`).join('')}</select>
+          <div class="btn-row">
+            <button class="link-btn" data-edit-save="${r.id}">Save</button>
+            <button class="link-btn" data-edit-cancel="${r.id}" style="color:var(--muted);">Cancel</button>
+          </div>
+        </div>`;
+      }
+      const z = r.tz || currentTz;
+      const tag = ` <span class="zone-tag">${shortZone(z, r.datetime)}</span>`;
+      return `<div class="entry-row">
+        <span>${fmtWhen(r.datetime, z)}${tag}</span>
+        <button class="edit-btn" data-edit="${r.id}" title="Edit">✎</button>
+        <button class="del-btn" data-del="${r.id}" title="Delete">✕</button>
+      </div>`;
+    }
+
     // One row per day; columns Date | Wakeup | Eat start | Eat end | Sleep.
-    async function renderDataTable() {
-      const rows = await DB.allEvents();
+    // Reduction/Fasting window/Sleep duration are computed live from the
+    // same events, never stored separately — matches how Data Entry
+    // computes them, and keeps raw events as the single source of truth.
+    function fmtDuration(mins) {
+      if (mins == null || isNaN(mins)) return null;
+      mins = Math.round(mins);
+      return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+    }
+    function lastEatEndBefore(iso) {
+      let best = null;
+      for (const r of allRows) {
+        if (r.aspect === 'eat_end' && r.datetime < iso && (!best || r.datetime > best.datetime)) best = r;
+      }
+      return best;
+    }
+    function lastSleepBefore(iso) {
+      let best = null;
+      for (const r of allRows) {
+        if (r.aspect === 'sleep' && r.datetime < iso && (!best || r.datetime > best.datetime)) best = r;
+      }
+      return best;
+    }
+    function reductionOf(r) { return r.reduction_min == null ? null : fmtDuration(r.reduction_min); }
+    // Returns { text, tip } so the cell can show the number and hover-reveal
+    // exactly which two events (and reduction, if any) it came from.
+    function fastingWindowOf(r) {
+      const prevEnd = lastEatEndBefore(r.datetime);
+      if (!prevEnd) return null;
+      const mins = (new Date(r.datetime) - new Date(prevEnd.datetime)) / 60000;
+      if (mins < 0) return null;
+      const tip = `Fast Start : ${fmtWhen(prevEnd.datetime, prevEnd.tz || currentTz)}\n`
+        + `Fast End : ${fmtWhen(r.datetime, r.tz || currentTz)}\n`
+        + `Fast duration : ${fmtDuration(mins)}`;
+      return { text: fmtDuration(mins), tip };
+    }
+    // r = a wakeup event: sleep duration = this wakeup minus the last sleep
+    // before it (matches Data Entry's "Sleep last night" calc), not the
+    // other direction.
+    function sleepDurationOf(r) {
+      const prevSleep = lastSleepBefore(r.datetime);
+      if (!prevSleep) return null;
+      const mins = (new Date(r.datetime) - new Date(prevSleep.datetime)) / 60000 - (r.reduction_min || 0);
+      if (mins <= 0) return null;
+      const tip = `Sleep : ${fmtWhen(prevSleep.datetime, prevSleep.tz || currentTz)}\n`
+        + `Wakeup : ${fmtWhen(r.datetime, r.tz || currentTz)}\n`
+        + `Reduction : ${fmtDuration(r.reduction_min || 0)}\n`
+        + `duration : ${fmtDuration(mins)}`;
+      return { text: fmtDuration(mins), tip };
+    }
+
+    function renderDataTable() {
       const body = $('dataBody');
       body.innerHTML = '';
-      if (!rows.length) {
-        body.innerHTML = '<tr><td colspan="5">Nothing yet.</td></tr>';
+      if (!allRows.length) {
+        body.innerHTML = '<tr><td colspan="8">Nothing yet.</td></tr>';
         $('dupNote').classList.add('hidden');
         return;
       }
-      // group by log day → { aspect: [rows] }
       const days = {};
-      for (const r of rows) {
-        const k = r.log_date || dayKey(r.datetime);   // fallback for old rows
+      for (const r of allRows) {
+        const k = r.log_date || dayKey(r.datetime);
         (days[k] = days[k] || {});
         (days[k][r.aspect] = days[k][r.aspect] || []).push(r);
       }
@@ -381,59 +534,137 @@
         if (!list || !list.length) return '<td class="no-data">No data available</td>';
         const dup = list.length > 1;
         if (dup) dupCount++;
-        const inner = list.map(r => {
-          const z = r.tz || currentTz;
-          const tag = ` <span class="zone-tag">${shortZone(z, r.datetime)}</span>`;
-          return `${fmtWhen(r.datetime, z)}${tag} <button class="del-btn" data-id="${r.id}" title="Delete">✕</button>`;
-        }).join('<br>');
-        return `<td class="${dup ? 'dupcell' : ''}">${dup ? '⚠ ' : ''}${inner}</td>`;
+        return `<td class="${dup ? 'dupcell' : ''}">${dup ? '⚠ ' : ''}${list.map(entryHtml).join('')}</td>`;
+      };
+      const derivedCell = (list, deriveFn) => {
+        if (!list || !list.length) return '<td class="no-data">No data available</td>';
+        return `<td>${list.map(r => {
+          const val = deriveFn(r);
+          if (val == null) return '<span class="no-data">No data available</span>';
+          if (typeof val === 'object') return `<span class="calc-val" title="${val.tip.replace(/"/g, '&quot;')}">${val.text}</span>`;
+          return val;
+        }).join('<br>')}</td>`;
       };
       for (const k of Object.keys(days).sort().reverse()) {
         const d = days[k];
         const dateLabel = new Date(`${k}T00:00`)
           .toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${dateLabel}</td>` + FIELDS.map(f => cell(d[f.id])).join('');
+        tr.innerHTML = `<td>${dateLabel}</td>` + FIELDS.map(f => cell(d[f.id])).join('')
+          + derivedCell(d.wakeup, reductionOf)
+          + derivedCell(d.eat_start, fastingWindowOf)
+          + derivedCell(d.wakeup, sleepDurationOf);
         body.appendChild(tr);
       }
       const note = $('dupNote');
       if (dupCount) {
-        note.textContent = '⚠ Some days have more than one of the same entry. Remove extras with ✕.';
+        note.textContent = '⚠ Some days have more than one of the same entry.';
         note.classList.remove('hidden');
       } else {
         note.classList.add('hidden');
       }
+      body.querySelectorAll('[data-edit]').forEach(btn => {
+        btn.addEventListener('click', () => { editingId = btn.dataset.edit; renderDataTable(); });
+      });
+      body.querySelectorAll('[data-edit-cancel]').forEach(btn => {
+        btn.addEventListener('click', () => { editingId = null; renderDataTable(); });
+      });
+      body.querySelectorAll('[data-edit-save]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const id = btn.dataset.editSave;
+          const dtInput = $('editDt_' + id), tzSelect = $('editTz_' + id);
+          const tz = tzSelect.value;
+          const iso = zonedToUtc(dtInput.value, tz).toISOString();
+          btn.disabled = true;
+          try {
+            // log_date (which day this belongs to) is a deliberate choice made
+            // when the entry was created — editing the time shouldn't silently
+            // move it to a different day, so only datetime/tz change here.
+            await DB.updateEvent(id, { datetime: iso, tz });
+            editingId = null;
+            await loadRows();
+          } catch (e) {
+            dataMsg('Save failed: ' + e.message, 'err');
+            btn.disabled = false;
+          }
+        });
+      });
+      body.querySelectorAll('[data-del]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const ok = await confirmModal('Delete this entry? Cannot undo.', { title: 'Delete', okText: 'Delete' });
+          if (!ok) return;
+          btn.disabled = true;
+          try {
+            await DB.deleteEvent(btn.dataset.del);
+            await loadRows();
+          } catch (err) {
+            dataMsg('Delete failed: ' + err.message, 'err');
+            btn.disabled = false;
+          }
+        });
+      });
+    }
+
+    // currentRange: null/null = "all data" (explicit high limit, not the
+    // default-1000-row cap); otherwise inclusive log_date bounds.
+    let currentRange = { from: null, to: null };
+    const isoDate = d => d.toISOString().slice(0, 10);
+    function last50Range() {
+      const to = new Date();
+      const from = new Date(to.getTime() - 49 * 86400000);   // 50 days inclusive
+      return { from: isoDate(from), to: isoDate(to) };
+    }
+    function setActiveQuickBtn(id) {
+      ['rangeLast50', 'rangeAll'].forEach(btnId => {
+        if (btnId === id) $(btnId).dataset.active = '1';
+        else delete $(btnId).dataset.active;
+      });
+    }
+
+    async function loadRows() {
+      allRows = await DB.eventsInRange(currentRange.from, currentRange.to);
+      renderDataTable();
     }
 
     $('refreshBtn').addEventListener('click', async () => {
       $('refreshBtn').disabled = true;
-      try { await renderDataTable(); }
+      try { await loadRows(); }
       catch (e) { dataMsg('Refresh failed: ' + e.message, 'err'); }
       finally { $('refreshBtn').disabled = false; }
     });
 
-    // Delete a cell entry (event delegation on the table body)
-    $('dataBody').addEventListener('click', async (e) => {
-      const btn = e.target.closest('.del-btn');
-      if (!btn) return;
-      const ok = await confirmModal('Delete this entry? Cannot undo.',
-        { title: 'Delete', okText: 'Delete' });
-      if (!ok) return;
-      btn.disabled = true;
-      try {
-        await DB.deleteEvent(btn.dataset.id);
-        await renderDataTable();
-      } catch (err) {
-        btn.disabled = false;
-        dataMsg('Delete failed: ' + err.message, 'err');
-      }
+    $('unlockBtn').addEventListener('click', () => {
+      const isLocked = $('dataTable').classList.toggle('locked');   // true = now locked
+      $('unlockBtn').textContent = isLocked ? '🔓 Unlock edit/delete' : '🔒 Lock edit/delete';
+    });
+
+    $('rangeLast50').addEventListener('click', async () => {
+      currentRange = last50Range();
+      $('rangeFrom').value = currentRange.from;
+      $('rangeTo').value = currentRange.to;
+      setActiveQuickBtn('rangeLast50');
+      try { await loadRows(); } catch (e) { dataMsg('Could not load: ' + e.message, 'err'); }
+    });
+    $('rangeAll').addEventListener('click', async () => {
+      currentRange = { from: null, to: null };
+      $('rangeFrom').value = ''; $('rangeTo').value = '';
+      setActiveQuickBtn('rangeAll');
+      try { await loadRows(); } catch (e) { dataMsg('Could not load: ' + e.message, 'err'); }
+    });
+    $('rangeApply').addEventListener('click', async () => {
+      currentRange = { from: $('rangeFrom').value || null, to: $('rangeTo').value || null };
+      setActiveQuickBtn(null);
+      try { await loadRows(); } catch (e) { dataMsg('Could not load: ' + e.message, 'err'); }
     });
 
     // ---- route: no session → sign in on the picker page ----
     function showLogin() { window.location.replace('index.html'); }
     async function showApp() {
       $('appView').classList.remove('hidden');
-      try { await renderDataTable(); }
+      currentRange = last50Range();
+      $('rangeFrom').value = currentRange.from;
+      $('rangeTo').value = currentRange.to;
+      try { await loadRows(); }
       catch (e) { dataMsg('Could not load: ' + e.message, 'err'); }
     }
 

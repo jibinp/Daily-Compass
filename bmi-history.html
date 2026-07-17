@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>Health Log - All Data — Daily Compass</title>
+  <title>Health Log - BMI/BMR History — Daily Compass</title>
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
@@ -109,7 +109,6 @@
     /* ---- data table ---- */
     .data-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
     .data-head h2 { margin: 0; font-size: 1rem; }
-    .dup-note { color: var(--err); font-size: 0.85rem; margin: 6px 0; }
     /* overflow-x alone would implicitly force overflow-y to 'auto' too (per
        spec, 'visible' can't pair with a non-visible axis) — turning this
        into its own scroll box. Made deliberate: bounded self-scrolling table
@@ -118,14 +117,19 @@
     table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
     th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
     th { color: var(--muted); font-weight: 600; background: var(--card); position: sticky; top: 0; }
-    .zone-tag { color: var(--muted); font-size: 0.72rem; }
-    .no-data { color: var(--muted); font-style: italic; }
-    .del-btn {
-      background: none; border: none; color: var(--err);
-      cursor: pointer; font-size: 1rem; padding: 0 4px; line-height: 1;
+    .edit-btn, .del-btn {
+      background: none; border: none; cursor: pointer; font-size: 1rem; padding: 0 4px; line-height: 1;
     }
-    .del-btn:active { transform: scale(0.9); }
-    tr.dup td, td.dupcell { background: rgba(248, 113, 113, 0.14); }
+    .edit-btn { color: var(--accent); }
+    .del-btn { color: var(--err); }
+    .edit-btn:active, .del-btn:active { transform: scale(0.9); }
+    /* Hidden by default so opening the page can't lead to an accidental tap-
+       delete — Unlock reveals them. */
+    #dataTable.locked .edit-btn, #dataTable.locked .del-btn { display: none; }
+    .row-input {
+      width: 76px; background: var(--field); border: 1px solid var(--border); color: var(--text);
+      border-radius: 6px; padding: 4px 6px; font-size: 0.85rem; color-scheme: dark;
+    }
     .msg { text-align: center; font-size: 0.9rem; margin: 12px 0; min-height: 1.2em; }
     .msg.ok { color: var(--ok); }
     .msg.err { color: var(--err); }
@@ -167,8 +171,8 @@
       <div class="tchildren collapsed" id="g-health">
         <a class="tnode" href="health-log.html"><span class="tw-sp"></span>Data Entry</a>
         <a class="tnode" href="supplement-tracker.html"><span class="tw-sp"></span>Tablet Ingredient Updater</a>
-        <a class="tnode active" href="all-data.html"><span class="tw-sp"></span>All Data</a>
-        <a class="tnode" href="bmi-history.html"><span class="tw-sp"></span>⚖️ BMI/BMR History</a>
+        <a class="tnode" href="all-data.html"><span class="tw-sp"></span>All Data</a>
+        <a class="tnode active" href="bmi-history.html"><span class="tw-sp"></span>⚖️ BMI/BMR History</a>
         <a class="tnode" href="time-history.html"><span class="tw-sp"></span>☀️ Time History</a>
       </div>
       <div class="tfolder tnode collapsed" data-group="g-temp"><span class="tw">▾</span>🗓️ Temporary</div>
@@ -192,7 +196,7 @@
 
   <div class="topbar">
     <button class="hamburger" id="navToggle" aria-label="Open menu">☰</button>
-    <span class="topbar-title">🩺 Health Log - All Data</span>
+    <span class="topbar-title">⚖️ BMI/BMR History</span>
     <button class="link-btn" id="logoutBtn">Log out</button>
   </div>
 
@@ -201,15 +205,17 @@
 
       <section class="field">
         <div class="data-head">
-          <h2>All data</h2>
-          <button class="link-btn" id="refreshBtn">↻ Refresh</button>
+          <h2>Weight / BMI / BMR — every entry</h2>
+          <div style="display:flex; gap:14px; align-items:center;">
+            <button class="link-btn" id="unlockBtn">🔓 Unlock edit/delete</button>
+            <button class="link-btn" id="refreshBtn">↻ Refresh</button>
+          </div>
         </div>
         <div class="msg" id="dataMsg"></div>
-        <div class="dup-note hidden" id="dupNote"></div>
         <div class="table-wrap">
-          <table id="dataTable">
+          <table id="dataTable" class="locked">
             <thead>
-              <tr><th>Date</th><th>Wakeup</th><th>Eat start</th><th>Eat end</th><th>Sleep</th></tr>
+              <tr><th>Date</th><th>Weight (kg)</th><th>Height (cm)</th><th>BMI</th><th>Category</th><th>Waist (cm)</th><th>Hip (cm)</th><th>WHR</th><th>BMR</th><th></th></tr>
             </thead>
             <tbody id="dataBody"></tbody>
           </table>
@@ -239,25 +245,20 @@
     const SUPABASE_KEY = 'sb_publishable_c1BhUlrZPf2YsXW_5LdrZw_-wYh4lJM';
     const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-    // single data-access surface (HLD §9)
     const DB = {
       onAuthChange(cb) { supabase.auth.onAuthStateChange((_e, s) => cb(s)); },
       async currentSession() { const { data } = await supabase.auth.getSession(); return data.session; },
       async signOut() { await supabase.auth.signOut(); },
-      async allEvents() {
-        // Supabase/PostgREST has a server-side max-rows cap (1000 by
-        // default) that silently overrides any client .limit() above it —
-        // with years of history that drops the oldest rows. Paginate in
-        // pages of 1000 instead, so it works regardless of that setting.
+      async allBodyMetrics() {
+        // Paginate (see time-history.html) — Supabase caps a single request
+        // at ~1000 rows regardless of client .limit().
         const PAGE = 1000;
         let all = [];
         let offset = 0;
         while (true) {
-          const { data, error } = await supabase
-            .from('events')
-            .select('id, aspect, title, datetime, log_date, tz, reduction_min')
+          const { data, error } = await supabase.from('body_metrics')
+            .select('log_date, weight_kg, height_cm, waist_cm, hip_cm')
             .order('log_date', { ascending: false })
-            .order('datetime', { ascending: true })
             .range(offset, offset + PAGE - 1);
           if (error) throw error;
           all = all.concat(data);
@@ -266,9 +267,22 @@
         }
         return all;
       },
-      async deleteEvent(id) {
-        const { error } = await supabase.from('events').delete().eq('id', id);
+      async bodyMetricsSet(log_date, weight_kg, height_cm, waist_cm, hip_cm) {
+        const { error } = await supabase.from('body_metrics').upsert({
+          log_date, weight_kg: weight_kg ?? null, height_cm: height_cm ?? null,
+          waist_cm: waist_cm ?? null, hip_cm: hip_cm ?? null,
+        }, { onConflict: 'log_date' });
         if (error) throw error;
+      },
+      async bodyMetricsDelete(log_date) {
+        const { error } = await supabase.from('body_metrics').delete().eq('log_date', log_date);
+        if (error) throw error;
+      },
+      async profileGet() {
+        const { data, error } = await supabase.from('user_profile')
+          .select('date_of_birth, sex').eq('id', 1).maybeSingle();
+        if (error) throw error;
+        return data;
       },
     };
 
@@ -325,115 +339,159 @@
       });
     }
 
-    // Time zones: display-only here (read the shared default; no switcher —
-    // this is a read-only history view, not an entry form).
-    const TZ_KEY = 'dc_tz';
-    const detectedTz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-    const currentTz = localStorage.getItem(TZ_KEY) || detectedTz;
-    // 3-letter zone code (EST/EDT/IST/…), correct for the specific date —
-    // Toronto's abbreviation flips across DST, so "now" wouldn't be right
-    // for historical entries.
-    const ZONE_ABBR_OVERRIDE = { 'Asia/Calcutta': 'IST', 'Asia/Kolkata': 'IST' };
-    function shortZone(tz, atIso) {
-      if (ZONE_ABBR_OVERRIDE[tz]) return ZONE_ABBR_OVERRIDE[tz];
-      try {
-        const p = new Intl.DateTimeFormat('en-US', { timeZone: tz, timeZoneName: 'short' })
-          .formatToParts(atIso ? new Date(atIso) : new Date()).find(x => x.type === 'timeZoneName');
-        return p ? p.value : (tz || '');
-      } catch { return tz || ''; }
+    function bmiCategory(bmi) {
+      if (bmi < 18.5) return 'Underweight';
+      if (bmi < 25) return 'Normal';
+      if (bmi < 30) return 'Overweight';
+      return 'Obese';
     }
-    function fmtWhen(iso, tz = currentTz) {
-      return new Date(iso).toLocaleString(undefined,
-        { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: tz });
+    // General (non-sex-specific) WHR risk bands — WHO splits these by sex,
+    // which isn't tracked here, so this is an approximation.
+    function whrCategory(whr) {
+      if (whr < 0.85) return 'Low risk';
+      if (whr <= 0.95) return 'Moderate risk';
+      return 'High risk';
     }
-    const pad = n => String(n).padStart(2, '0');
-    const dayKey = iso => {
-      const d = new Date(iso);
-      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-    };
+    const round1 = n => Math.round(n * 10) / 10;
+    function bmiOf(weightKg, heightCm) {
+      if (weightKg == null || heightCm == null) return null;
+      const m = heightCm / 100;
+      return weightKg / (m * m);
+    }
+    function whrOf(waistCm, hipCm) {
+      if (waistCm == null || hipCm == null) return null;
+      return waistCm / hipCm;
+    }
+    // Profile is a one-time setting (DOB + sex), loaded once — see
+    // health-log.html for where it's entered.
+    let profile = { date_of_birth: null, sex: null };
+    function ageAt(dob, atDateStr) {
+      if (!dob) return null;
+      const b = new Date(dob + 'T00:00:00');
+      const a = new Date(atDateStr + 'T00:00:00');
+      let age = a.getFullYear() - b.getFullYear();
+      const m = a.getMonth() - b.getMonth();
+      if (m < 0 || (m === 0 && a.getDate() < b.getDate())) age--;
+      return age;
+    }
+    // Mifflin-St Jeor, age computed as of that row's own date (not today) —
+    // matters for older rows.
+    function bmrOf(weightKg, heightCm, logDate) {
+      if (weightKg == null || heightCm == null || !profile.date_of_birth || !profile.sex) return null;
+      const age = ageAt(profile.date_of_birth, logDate);
+      if (age == null) return null;
+      const base = 10 * weightKg + 6.25 * heightCm - 5 * age;
+      return profile.sex === 'female' ? base - 161 : base + 5;
+    }
 
-    const FIELDS = [
-      { id: 'wakeup',    label: 'Wakeup' },
-      { id: 'eat_start', label: 'Eating start' },
-      { id: 'eat_end',   label: 'Eating end' },
-      { id: 'sleep',     label: 'Sleep' },
-    ];
+    let rows = [];
+    let editingDate = null;
 
-    // One row per day; columns Date | Wakeup | Eat start | Eat end | Sleep.
-    async function renderDataTable() {
-      const rows = await DB.allEvents();
+    function renderRow(r) {
+      const bmi = bmiOf(r.weight_kg, r.height_cm);
+      const whr = whrOf(r.waist_cm, r.hip_cm);
+      const bmr = bmrOf(r.weight_kg, r.height_cm, r.log_date);
+      const dateLabel = new Date(`${r.log_date}T00:00`)
+        .toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
+      if (editingDate === r.log_date) {
+        return `<tr data-date="${r.log_date}">
+          <td>${dateLabel}</td>
+          <td><input type="number" step="0.1" class="row-input" id="editWeight" value="${r.weight_kg ?? ''}" /></td>
+          <td><input type="number" step="0.1" class="row-input" id="editHeight" value="${r.height_cm ?? ''}" /></td>
+          <td colspan="2">
+            <button class="link-btn" id="editSaveBtn">Save</button>
+            <button class="link-btn" id="editCancelBtn" style="margin-left:10px;color:var(--muted);">Cancel</button>
+          </td>
+          <td><input type="number" step="0.1" class="row-input" id="editWaist" value="${r.waist_cm ?? ''}" /></td>
+          <td><input type="number" step="0.1" class="row-input" id="editHip" value="${r.hip_cm ?? ''}" /></td>
+          <td colspan="3"></td>
+        </tr>`;
+      }
+      return `<tr data-date="${r.log_date}">
+        <td>${dateLabel}</td>
+        <td>${r.weight_kg ?? '—'}</td>
+        <td>${r.height_cm ?? '—'}</td>
+        <td>${bmi != null ? round1(bmi) : '—'}</td>
+        <td>${bmi != null ? bmiCategory(bmi) : '—'}</td>
+        <td>${r.waist_cm ?? '—'}</td>
+        <td>${r.hip_cm ?? '—'}</td>
+        <td>${whr != null ? `${whr.toFixed(2)} (${whrCategory(whr)})` : '—'}</td>
+        <td>${bmr != null ? `${Math.round(bmr)} kcal/day` : '—'}</td>
+        <td>
+          <button class="edit-btn" data-edit="${r.log_date}" title="Edit">✎</button>
+          <button class="del-btn" data-del="${r.log_date}" title="Delete">✕</button>
+        </td>
+      </tr>`;
+    }
+
+    function renderTable() {
       const body = $('dataBody');
-      body.innerHTML = '';
-      if (!rows.length) {
-        body.innerHTML = '<tr><td colspan="5">Nothing yet.</td></tr>';
-        $('dupNote').classList.add('hidden');
-        return;
-      }
-      // group by log day → { aspect: [rows] }
-      const days = {};
-      for (const r of rows) {
-        const k = r.log_date || dayKey(r.datetime);   // fallback for old rows
-        (days[k] = days[k] || {});
-        (days[k][r.aspect] = days[k][r.aspect] || []).push(r);
-      }
-      let dupCount = 0;
-      const cell = list => {
-        if (!list || !list.length) return '<td class="no-data">No data available</td>';
-        const dup = list.length > 1;
-        if (dup) dupCount++;
-        const inner = list.map(r => {
-          const z = r.tz || currentTz;
-          const tag = ` <span class="zone-tag">${shortZone(z, r.datetime)}</span>`;
-          return `${fmtWhen(r.datetime, z)}${tag} <button class="del-btn" data-id="${r.id}" title="Delete">✕</button>`;
-        }).join('<br>');
-        return `<td class="${dup ? 'dupcell' : ''}">${dup ? '⚠ ' : ''}${inner}</td>`;
-      };
-      for (const k of Object.keys(days).sort().reverse()) {
-        const d = days[k];
-        const dateLabel = new Date(`${k}T00:00`)
-          .toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
-        const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${dateLabel}</td>` + FIELDS.map(f => cell(d[f.id])).join('');
-        body.appendChild(tr);
-      }
-      const note = $('dupNote');
-      if (dupCount) {
-        note.textContent = '⚠ Some days have more than one of the same entry. Remove extras with ✕.';
-        note.classList.remove('hidden');
-      } else {
-        note.classList.add('hidden');
-      }
+      if (!rows.length) { body.innerHTML = '<tr><td colspan="10">Nothing yet.</td></tr>'; return; }
+      body.innerHTML = rows.map(renderRow).join('');
+
+      body.querySelectorAll('[data-edit]').forEach(btn => {
+        btn.addEventListener('click', () => { editingDate = btn.dataset.edit; renderTable(); });
+      });
+      body.querySelectorAll('[data-del]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const ok = await confirmModal('Delete this weight/height entry? Cannot undo.', { title: 'Delete', okText: 'Delete' });
+          if (!ok) return;
+          btn.disabled = true;
+          try {
+            await DB.bodyMetricsDelete(btn.dataset.del);
+            await loadRows();
+          } catch (e) {
+            dataMsg('Delete failed: ' + e.message, 'err');
+            btn.disabled = false;
+          }
+        });
+      });
+      const saveBtn = $('editSaveBtn');
+      if (saveBtn) saveBtn.addEventListener('click', async () => {
+        const w = $('editWeight').value ? parseFloat($('editWeight').value) : null;
+        const h = $('editHeight').value ? parseFloat($('editHeight').value) : null;
+        const wa = $('editWaist').value ? parseFloat($('editWaist').value) : null;
+        const hi = $('editHip').value ? parseFloat($('editHip').value) : null;
+        saveBtn.disabled = true;
+        try {
+          await DB.bodyMetricsSet(editingDate, w, h, wa, hi);
+          editingDate = null;
+          await loadRows();
+        } catch (e) {
+          dataMsg('Save failed: ' + e.message, 'err');
+          saveBtn.disabled = false;
+        }
+      });
+      const cancelBtn = $('editCancelBtn');
+      if (cancelBtn) cancelBtn.addEventListener('click', () => { editingDate = null; renderTable(); });
+    }
+
+    async function loadRows() {
+      rows = await DB.allBodyMetrics();
+      renderTable();
     }
 
     $('refreshBtn').addEventListener('click', async () => {
       $('refreshBtn').disabled = true;
-      try { await renderDataTable(); }
+      try { await loadRows(); }
       catch (e) { dataMsg('Refresh failed: ' + e.message, 'err'); }
       finally { $('refreshBtn').disabled = false; }
     });
 
-    // Delete a cell entry (event delegation on the table body)
-    $('dataBody').addEventListener('click', async (e) => {
-      const btn = e.target.closest('.del-btn');
-      if (!btn) return;
-      const ok = await confirmModal('Delete this entry? Cannot undo.',
-        { title: 'Delete', okText: 'Delete' });
-      if (!ok) return;
-      btn.disabled = true;
-      try {
-        await DB.deleteEvent(btn.dataset.id);
-        await renderDataTable();
-      } catch (err) {
-        btn.disabled = false;
-        dataMsg('Delete failed: ' + err.message, 'err');
-      }
+    $('unlockBtn').addEventListener('click', () => {
+      const isLocked = $('dataTable').classList.toggle('locked');   // true = now locked
+      $('unlockBtn').textContent = isLocked ? '🔓 Unlock edit/delete' : '🔒 Lock edit/delete';
     });
 
     // ---- route: no session → sign in on the picker page ----
     function showLogin() { window.location.replace('index.html'); }
     async function showApp() {
       $('appView').classList.remove('hidden');
-      try { await renderDataTable(); }
+      try {
+        const p = await DB.profileGet();
+        if (p) profile = p;
+      } catch { /* profile is optional — BMR just won't show without it */ }
+      try { await loadRows(); }
       catch (e) { dataMsg('Could not load: ' + e.message, 'err'); }
     }
 

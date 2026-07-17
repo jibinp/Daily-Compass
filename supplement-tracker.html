@@ -202,6 +202,8 @@
         <a class="tnode" href="health-log.html"><span class="tw-sp"></span>Data Entry</a>
         <a class="tnode active" href="supplement-tracker.html"><span class="tw-sp"></span>Tablet Ingredient Updater</a>
         <a class="tnode" href="all-data.html"><span class="tw-sp"></span>All Data</a>
+        <a class="tnode" href="bmi-history.html"><span class="tw-sp"></span>⚖️ BMI/BMR History</a>
+        <a class="tnode" href="time-history.html"><span class="tw-sp"></span>☀️ Time History</a>
       </div>
       <div class="tfolder tnode collapsed" data-group="g-temp"><span class="tw">▾</span>🗓️ Temporary</div>
       <div class="tchildren collapsed" id="g-temp">
@@ -310,6 +312,21 @@
           active: active !== false, sort_order: sort_order ?? 0, image_url: image_url || null,
         }, { onConflict: 'name' });
         if (error) throw error;
+      },
+      // True rename — name is the primary key, so this moves the row plus
+      // every historical reference (log, received) to the new name instead
+      // of archiving the old row and creating a fresh duplicate. Ingredients
+      // aren't migrated here: the old row's cascade-delete clears them, and
+      // the caller re-inserts current ones under the new name right after.
+      async supplementRename(oldName, newName, fields) {
+        const ins = await supabase.from('supplements').upsert({ name: newName, ...fields }, { onConflict: 'name' });
+        if (ins.error) throw ins.error;
+        const logUpd = await supabase.from('supplement_log').update({ supplement: newName }).eq('supplement', oldName);
+        if (logUpd.error) throw logUpd.error;
+        const recvUpd = await supabase.from('supplement_received').update({ supplement: newName }).eq('supplement', oldName);
+        if (recvUpd.error) throw recvUpd.error;
+        const del = await supabase.from('supplements').delete().eq('name', oldName);
+        if (del.error) throw del.error;
       },
       // upload a tablet picture, return its public URL
       async uploadTabletImage(file, tabletName) {
@@ -465,14 +482,14 @@
         let imageUrl = openSuppImageUrl;
         const file = $('sfImage').files[0];
         if (file) imageUrl = await DB.uploadTabletImage(file, name);
-        if (origName && origName !== name) {
-          await DB.supplementSetActive(origName, false);   // don't silently orphan the old row
-        }
-        const existing = supplements.find(s => s.name === name);
-        await DB.supplementUpsert({
-          name, dose: $('sfDose').value.trim(), notes: $('sfNotes').value.trim(),
+        const renaming = origName && origName !== name;
+        const existing = supplements.find(s => s.name === (renaming ? origName : name));
+        const fields = {
+          dose: $('sfDose').value.trim(), notes: $('sfNotes').value.trim(),
           active: true, sort_order: existing ? existing.sort_order : supplements.length, image_url: imageUrl,
-        });
+        };
+        if (renaming) await DB.supplementRename(origName, name, fields);
+        else await DB.supplementUpsert({ name, ...fields });
         await DB.ingredientsReplace(name, collectIngredients());
         suppMsg('Saved.', 'ok');
         $('suppForm').classList.add('hidden');

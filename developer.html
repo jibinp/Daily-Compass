@@ -120,6 +120,11 @@
     .err-top { display: flex; justify-content: space-between; gap: 10px; font-size: 0.78rem; color: var(--muted); margin-bottom: 4px; }
     .err-section { color: var(--accent); font-weight: 600; }
     .err-count { color: var(--muted); font-weight: 400; }
+    .err-top .del-btn {
+      background: none; border: none; color: var(--muted);
+      cursor: pointer; font-size: 0.95rem; padding: 0 0 0 8px; line-height: 1;
+    }
+    .err-top .del-btn:hover { color: var(--err); }
     .err-msg { color: var(--err); font-size: 0.86rem; word-break: break-word; }
     .msg { text-align: center; font-size: 0.9rem; margin: 12px 0; min-height: 1.2em; }
     .msg.ok { color: var(--ok); }
@@ -141,6 +146,8 @@
         <a class="tnode" href="health-log.html"><span class="tw-sp"></span>Data Entry</a>
         <a class="tnode" href="supplement-tracker.html"><span class="tw-sp"></span>Tablet Ingredient Updater</a>
         <a class="tnode" href="all-data.html"><span class="tw-sp"></span>All Data</a>
+        <a class="tnode" href="bmi-history.html"><span class="tw-sp"></span>⚖️ BMI/BMR History</a>
+        <a class="tnode" href="time-history.html"><span class="tw-sp"></span>☀️ Time History</a>
       </div>
       <div class="tfolder tnode collapsed" data-group="g-temp"><span class="tw">▾</span>🗓️ Temporary</div>
       <div class="tchildren collapsed" id="g-temp">
@@ -217,13 +224,16 @@
     $('navClose').addEventListener('click', closeNav);
     $('navBackdrop').addEventListener('click', closeNav);
     // ---- Settings badge: shows a count when unresolved dev errors exist ----
-    (function updateSettingsBadge() {
+    function updateSettingsBadge() {
       try {
         const log = JSON.parse(localStorage.getItem('dc_dev_errors') || '[]');
         const badge = document.getElementById('settingsBadge');
-        if (badge && log.length) { badge.textContent = log.length; badge.classList.remove('hidden'); }
+        if (!badge) return;
+        if (log.length) { badge.textContent = log.length; badge.classList.remove('hidden'); }
+        else { badge.classList.add('hidden'); }
       } catch { /* localStorage unavailable */ }
-    })();
+    }
+    updateSettingsBadge();
     document.addEventListener('keydown', e => { if (e.key === 'Escape') closeNav(); });
     $('sidebar').addEventListener('click', e => {
       const f = e.target.closest('.tfolder');
@@ -254,16 +264,26 @@
         el.innerHTML = '<li class="err-row">No errors logged this session.</li>';
         return;
       }
-      el.innerHTML = list.map(e => {
+      el.innerHTML = list.map((e, i) => {
         const label = e.page && e.page !== e.section ? `${e.page} — ${e.section}` : e.section;
         const countTag = e.count > 1 ? ` <span class="err-count">×${e.count}</span>` : '';
         return `
         <li class="err-row">
-          <div class="err-top"><span class="err-section">${label}${countTag}</span><span>${fmtTs(e.ts)}</span></div>
+          <div class="err-top"><span class="err-section">${label}${countTag}</span><span>${fmtTs(e.ts)} <button class="del-btn" data-dismiss="${i}" title="Dismiss — only if you've confirmed this is fixed">✕</button></span></div>
           <div class="err-msg">${e.message}</div>
         </li>
       `;
       }).join('');
+      el.querySelectorAll('[data-dismiss]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const idx = Number(btn.dataset.dismiss);
+          const current = readErrors().slice().reverse();
+          current.splice(idx, 1);
+          localStorage.setItem(ERR_KEY, JSON.stringify(current.reverse()));
+          renderErrors();
+          updateSettingsBadge();
+        });
+      });
     }
 
     $('refreshBtn').addEventListener('click', renderErrors);
