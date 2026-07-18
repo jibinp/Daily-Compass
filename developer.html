@@ -144,7 +144,6 @@
       <div class="tfolder tnode collapsed" data-group="g-health"><span class="tw">▾</span>🩺 Health Log</div>
       <div class="tchildren collapsed" id="g-health">
         <a class="tnode" href="health-log.html"><span class="tw-sp"></span>Data Entry</a>
-        <a class="tnode" href="supplement-tracker.html"><span class="tw-sp"></span>Tablet Ingredient Updater</a>
         <a class="tnode" href="bmi-history.html"><span class="tw-sp"></span>⚖️ BMI/BMR History</a>
         <a class="tnode" href="time-history.html"><span class="tw-sp"></span>☀️ Time History</a>
         <a class="tnode" href="alcohol-history.html"><span class="tw-sp"></span>🍸 Alcohol History</a>
@@ -163,6 +162,7 @@
       </div>
       <div class="tfolder tnode collapsed" data-group="g-settings"><span class="tw">▾</span>⚙️ Settings<span class="nav-badge hidden" id="settingsBadge"></span></div>
       <div class="tchildren collapsed" id="g-settings">
+        <a class="tnode" href="item-catalog.html"><span class="tw-sp"></span>🗂️ Item Catalog</a>
         <a class="tnode active" href="developer.html"><span class="tw-sp"></span>🛠️ Developer</a>
         <a class="tnode" href="thresholds.html"><span class="tw-sp"></span>🎯 Thresholds</a>
       </div>
@@ -293,7 +293,7 @@
     // cache-busting query string) so this always reflects what's actually
     // deployed right now, regardless of what the browser/home-screen app
     // has cached for the page you're looking at.
-    const DEPLOY_CHECK_FILES = ['developer.html', 'health-log.html', 'index.html', 'all-data.html', 'supplement-tracker.html', 'temporary.html'];
+    const DEPLOY_CHECK_FILES = ['developer.html', 'health-log.html', 'index.html', 'all-data.html', 'item-catalog.html', 'temporary.html'];
     async function checkDeployVersion() {
       const el = $('deployInfo');
       el.innerHTML = DEPLOY_CHECK_FILES.map(f =>

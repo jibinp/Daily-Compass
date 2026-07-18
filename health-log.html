@@ -417,7 +417,6 @@
       <div class="tfolder tnode collapsed" data-group="g-health"><span class="tw">▾</span>🩺 Health Log</div>
       <div class="tchildren collapsed" id="g-health">
         <a class="tnode active" href="health-log.html"><span class="tw-sp"></span>Data Entry</a>
-        <a class="tnode" href="supplement-tracker.html"><span class="tw-sp"></span>Tablet Ingredient Updater</a>
         <a class="tnode" href="bmi-history.html"><span class="tw-sp"></span>⚖️ BMI/BMR History</a>
         <a class="tnode" href="time-history.html"><span class="tw-sp"></span>☀️ Time History</a>
         <a class="tnode" href="alcohol-history.html"><span class="tw-sp"></span>🍸 Alcohol History</a>
@@ -436,6 +435,7 @@
       </div>
       <div class="tfolder tnode collapsed" data-group="g-settings"><span class="tw">▾</span>⚙️ Settings<span class="nav-badge hidden" id="settingsBadge"></span></div>
       <div class="tchildren collapsed" id="g-settings">
+        <a class="tnode" href="item-catalog.html"><span class="tw-sp"></span>🗂️ Item Catalog</a>
         <a class="tnode" href="developer.html"><span class="tw-sp"></span>🛠️ Developer</a>
         <a class="tnode" href="thresholds.html"><span class="tw-sp"></span>🎯 Thresholds</a>
       </div>
@@ -563,18 +563,7 @@
             <div class="field-head"><span class="icon">🍎</span><span class="label">Food Log</span></div>
             <div class="muted-note">Fill in whatever you had today. Saves with the topbar Save button.</div>
             <div id="foodItemsList"></div>
-            <div class="crs-toolbar">
-              <button class="mini-btn ghost" id="foodAddToggle">＋ Add food item</button>
-            </div>
-            <div id="foodFormMsg" class="crs-msg"></div>
-            <div id="foodForm" class="crs-form hidden">
-              <label class="muted-note" for="fiName">Food item name</label>
-              <input type="text" id="fiName" placeholder="e.g. Banana" />
-              <div class="btn-row">
-                <button class="mini-btn" id="fiSave">Save</button>
-                <button class="mini-btn ghost" id="fiCancel">Cancel</button>
-              </div>
-            </div>
+            <div class="muted-note">New food item? <a href="item-catalog.html#food" style="color:var(--accent);">Add it in Item Catalog</a>.</div>
           </div>
 
           <div class="field jump-target" id="sectionMeal">
@@ -659,27 +648,7 @@
             </div>
             <div id="logMsg" class="crs-msg"></div>
             <ul class="list" id="logPendingList"></ul>
-
-            <div class="crs-toolbar">
-              <button class="mini-btn ghost" id="suppAddToggle">＋ Add tablet</button>
-            </div>
-            <div id="suppFormMsg" class="crs-msg"></div>
-            <div id="suppForm" class="crs-form hidden">
-              <label class="muted-note" for="sfName">Tablet name</label>
-              <input type="text" id="sfName" placeholder="e.g. Daily Multivitamin" />
-              <label class="muted-note" for="sfDose">Serving</label>
-              <input type="text" id="sfDose" placeholder="e.g. 1 tablet" />
-              <label class="muted-note" for="sfImage">Picture</label>
-              <input type="file" id="sfImage" accept="image/*" />
-              <img id="sfImagePreview" class="tablet-thumb hidden" alt="" />
-              <label class="muted-note">Ingredients</label>
-              <div id="sfIngredients"></div>
-              <button class="mini-btn ghost" id="sfIngAdd" type="button">＋ Add ingredient</button>
-              <div class="btn-row">
-                <button class="mini-btn" id="sfSave">Save</button>
-                <button class="mini-btn ghost" id="sfCancel">Cancel</button>
-              </div>
-            </div>
+            <div class="muted-note">New tablet, or editing ingredients? <a href="item-catalog.html#supp" style="color:var(--accent);">Manage in Item Catalog</a>.</div>
           </div>
 
           <div class="field jump-target" id="sectionAlcohol">
@@ -695,29 +664,7 @@
             </div>
             <div id="logAlcoholMsg" class="crs-msg"></div>
             <ul class="list" id="alcoholPendingList"></ul>
-
-            <div class="crs-toolbar">
-              <button class="mini-btn ghost" id="alcAddToggle">＋ Add drink</button>
-            </div>
-            <div id="alcFormMsg" class="crs-msg"></div>
-            <div id="alcForm" class="crs-form hidden">
-              <label class="muted-note" for="afName">Drink name</label>
-              <input type="text" id="afName" placeholder="e.g. Jack Daniel's" />
-              <label class="muted-note" for="afType">Type</label>
-              <select id="afType">
-                <option value="Hard Liquor">Hard Liquor</option>
-                <option value="Wine">Wine</option>
-                <option value="Beer">Beer</option>
-              </select>
-              <label class="muted-note" for="afSubtype">Subtype</label>
-              <input type="text" id="afSubtype" placeholder="e.g. Whiskey, Red, Lager" />
-              <label class="muted-note" for="afAbv">Alcohol content (% ABV)</label>
-              <input type="number" step="any" id="afAbv" placeholder="e.g. 40" />
-              <div class="btn-row">
-                <button class="mini-btn" id="afSave">Save</button>
-                <button class="mini-btn ghost" id="afCancel">Cancel</button>
-              </div>
-            </div>
+            <div class="muted-note">New drink? <a href="item-catalog.html#alc" style="color:var(--accent);">Add it in Item Catalog</a>.</div>
           </div>
         </section>
 
@@ -902,15 +849,6 @@
         if (error) throw error;
         return data;
       },
-      // upload a tablet picture, return its public URL
-      async uploadTabletImage(file, tabletName) {
-        const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
-        const path = `${tabletName.replace(/[^a-z0-9]/gi, '_')}-${Date.now()}.${ext}`;
-        const { error } = await supabase.storage.from('tablet-images').upload(path, file, { upsert: true });
-        if (error) throw error;
-        const { data } = supabase.storage.from('tablet-images').getPublicUrl(path);
-        return data.publicUrl;
-      },
       async supplementLogForDate(log_date) {
         const { data, error } = await supabase.from('supplement_log')
           .select('supplement, taken, quantity').eq('log_date', log_date);
@@ -923,38 +861,12 @@
         }, { onConflict: 'log_date,supplement' });
         if (error) throw error;
       },
-      async supplementUpsert({ name, dose, sort_order, image_url }) {
-        const { error } = await supabase.from('supplements').upsert({
-          name, dose: dose || null, active: true, sort_order: sort_order ?? 0, image_url: image_url || null,
-        }, { onConflict: 'name' });
-        if (error) throw error;
-      },
-      // replace the full ingredient list for a tablet (delete + re-insert is
-      // simplest to keep in sync with a freeform, reorderable row list)
-      async ingredientsReplace(supplement, ingredients) {
-        const del = await supabase.from('supplement_ingredients').delete().eq('supplement', supplement);
-        if (del.error) throw del.error;
-        if (!ingredients.length) return;
-        const rows = ingredients.map((ing, i) => ({
-          supplement, ingredient: ing.ingredient,
-          amount_value: ing.amount_value, amount_unit: ing.amount_unit, amount_form: ing.amount_form,
-          sort_order: i,
-        }));
-        const ins = await supabase.from('supplement_ingredients').insert(rows);
-        if (ins.error) throw ins.error;
-      },
       // ---- Alcohol Tracker (entry lives here, same pattern as supplements) ----
       async activeAlcoholItems() {
         const { data, error } = await supabase.from('alcohol_items')
           .select('name, type, subtype, abv_percent').eq('active', true).order('sort_order', { ascending: true }).order('name', { ascending: true });
         if (error) throw error;
         return data;
-      },
-      async alcoholItemUpsert({ name, type, subtype, abv_percent, sort_order }) {
-        const { error } = await supabase.from('alcohol_items').upsert({
-          name, type, subtype: subtype || null, abv_percent: abv_percent ?? null, active: true, sort_order: sort_order ?? 0,
-        }, { onConflict: 'name' });
-        if (error) throw error;
       },
       // Transactional — a day can have multiple entries, even for the same drink.
       async alcoholLogForDate(log_date) {
@@ -1031,12 +943,6 @@
           .select('name').eq('active', true).order('sort_order', { ascending: true }).order('name', { ascending: true });
         if (error) throw error;
         return data;
-      },
-      async foodItemAdd(name, sort_order) {
-        const { error } = await supabase.from('food_items').upsert({
-          name, active: true, sort_order: sort_order ?? 0,
-        }, { onConflict: 'name' });
-        if (error) throw error;
       },
       async foodLogForDate(log_date) {
         const { data, error } = await supabase.from('food_log')
@@ -1472,7 +1378,7 @@
     function renderFoodItemsList() {
       const el = $('foodItemsList');
       if (!foodItems.length) {
-        el.innerHTML = '<div class="muted-note">No food items yet — click "+ Add food item" below.</div>';
+        el.innerHTML = '<div class="muted-note">No food items yet — add one in Item Catalog.</div>';
         return;
       }
       el.innerHTML = foodItems.map(item =>
@@ -1499,35 +1405,6 @@
         logDevError('Food Log', 'Could not load: ' + e.message);
       }
     }
-    function foodFormMsg(text, kind) {
-      if (kind === 'err') { logDevError('Food Log (add item)', text); text = ''; }
-      const el = $('foodFormMsg'); el.textContent = text || '';
-      el.className = 'crs-msg' + (kind ? ' ' + kind : '');
-    }
-    $('foodAddToggle').addEventListener('click', () => {
-      $('foodForm').classList.toggle('hidden');
-      if (!$('foodForm').classList.contains('hidden')) {
-        $('fiName').value = '';
-        foodFormMsg('', ''); $('fiName').focus();
-      }
-    });
-    $('fiCancel').addEventListener('click', () => $('foodForm').classList.add('hidden'));
-    $('fiSave').addEventListener('click', async () => {
-      const name = $('fiName').value.trim();
-      if (!name) { foodFormMsg('Name is required.', 'err'); return; }
-      $('fiSave').disabled = true;
-      foodFormMsg('Saving…', '');
-      try {
-        await DB.foodItemAdd(name, foodItems.length);
-        foodItems = await DB.activeFoodItems();
-        renderFoodItemsList();
-        $('foodForm').classList.add('hidden');
-        foodFormMsg('', '');
-      } catch (e) {
-        foodFormMsg('Save failed: ' + (e.message || ''), 'err');
-      } finally { $('fiSave').disabled = false; }
-    });
-
     // ================================================================
     // Meal Log — one freeform macro entry per day, compared against the
     // nutrition targets currently in effect (versioned by effective_date;
@@ -2248,7 +2125,7 @@
         if (!activeSupplements.length) activeSupplements = await DB.activeSupplements();
         populateLogTabletSelect();
         if (!activeSupplements.length) {
-          el.innerHTML = '<li><span class="when">No active tablets — click "+ Add tablet" below.</span></li>';
+          el.innerHTML = '<li><span class="when">No active tablets — add one in Item Catalog.</span></li>';
           renderSelectedDate();
           updateDirtyIndicator();
           return;
@@ -2268,78 +2145,6 @@
         logDevError('Supplement log', 'Could not load: ' + e.message);
       }
     }
-
-    function suppFormMsg(text, kind) {
-      if (kind === 'err') { logDevError('Add tablet', text); text = ''; }
-      const el = $('suppFormMsg'); el.textContent = text || '';
-      el.className = 'crs-msg' + (kind ? ' ' + kind : '');
-    }
-    // ---- ingredient rows (a tablet can contain multiple ingredients) ----
-    function addIngredientRow(ingredient = '', amountValue = '', amountUnit = '', amountForm = '') {
-      const row = document.createElement('div');
-      row.className = 'ing-row';
-      row.innerHTML = `
-        <input type="text" class="ing-name" placeholder="Ingredient, e.g. Vitamin D3" value="${ingredient}" />
-        <input type="number" step="any" class="ing-amount" placeholder="Amt" value="${amountValue}" />
-        <input type="text" class="ing-unit" placeholder="Unit" value="${amountUnit}" />
-        <input type="text" class="ing-form" placeholder="Form, e.g. Zinc Citrate" value="${amountForm}" />
-        <button type="button" class="ing-rm" title="Remove">✕</button>`;
-      row.querySelector('.ing-rm').addEventListener('click', () => row.remove());
-      $('sfIngredients').appendChild(row);
-    }
-    function collectIngredients() {
-      return [...$('sfIngredients').querySelectorAll('.ing-row')]
-        .map(row => {
-          const rawAmount = row.querySelector('.ing-amount').value.trim();
-          return {
-            ingredient: row.querySelector('.ing-name').value.trim(),
-            amount_value: rawAmount === '' ? null : Number(rawAmount),
-            amount_unit: row.querySelector('.ing-unit').value.trim() || null,
-            amount_form: row.querySelector('.ing-form').value.trim() || null,
-          };
-        })
-        .filter(i => i.ingredient);
-    }
-    $('sfIngAdd').addEventListener('click', () => addIngredientRow());
-
-    // local preview of the picked file, before it's uploaded
-    $('sfImage').addEventListener('change', () => {
-      const file = $('sfImage').files[0];
-      const preview = $('sfImagePreview');
-      if (!file) return;
-      preview.src = URL.createObjectURL(file);
-      preview.classList.remove('hidden');
-    });
-
-    $('suppAddToggle').addEventListener('click', () => {
-      $('suppForm').classList.toggle('hidden');
-      if (!$('suppForm').classList.contains('hidden')) {
-        $('sfName').value = ''; $('sfDose').value = '';
-        $('sfImage').value = ''; $('sfImagePreview').src = ''; $('sfImagePreview').classList.add('hidden');
-        $('sfIngredients').innerHTML = ''; addIngredientRow();
-        suppFormMsg('', ''); $('sfName').focus();
-      }
-    });
-    $('sfCancel').addEventListener('click', () => $('suppForm').classList.add('hidden'));
-    $('sfSave').addEventListener('click', async () => {
-      const name = $('sfName').value.trim();
-      if (!name) { suppFormMsg('Tablet name is required.', 'err'); return; }
-      $('sfSave').disabled = true;
-      suppFormMsg('Saving…', '');
-      try {
-        let imageUrl = null;
-        const file = $('sfImage').files[0];
-        if (file) imageUrl = await DB.uploadTabletImage(file, name);
-        await DB.supplementUpsert({ name, dose: $('sfDose').value.trim(), sort_order: activeSupplements.length, image_url: imageUrl });
-        await DB.ingredientsReplace(name, collectIngredients());
-        activeSupplements = await DB.activeSupplements();   // refetch so the new one shows up
-        populateLogTabletSelect();
-        $('suppForm').classList.add('hidden');
-        suppFormMsg('', '');
-      } catch (e) {
-        suppFormMsg('Save failed: ' + (e.message || ''), 'err');
-      } finally { $('sfSave').disabled = false; }
-    });
 
     // ---- Alcohol log (tied to the same log date). Transactional — a day
     // can have multiple entries, even for the same drink — so each Add
@@ -2451,7 +2256,7 @@
       populateLogAlcoholSelect();
       if (!logDate) { renderPendingAlcohol(); renderSelectedDate(); return; }
       if (!activeAlcoholItems.length) {
-        el.innerHTML = '<li><span class="when">No active drinks — click "+ Add drink" below.</span></li>';
+        el.innerHTML = '<li><span class="when">No active drinks — add one in Item Catalog.</span></li>';
         renderSelectedDate();
         return;
       }
@@ -2463,39 +2268,6 @@
         logDevError('Alcohol log', 'Could not load: ' + e.message);
       }
     }
-
-    function alcFormMsg(text, kind) {
-      if (kind === 'err') { logDevError('Add drink', text); text = ''; }
-      const el = $('alcFormMsg'); el.textContent = text || '';
-      el.className = 'crs-msg' + (kind ? ' ' + kind : '');
-    }
-    $('alcAddToggle').addEventListener('click', () => {
-      $('alcForm').classList.toggle('hidden');
-      if (!$('alcForm').classList.contains('hidden')) {
-        $('afName').value = ''; $('afType').value = 'Hard Liquor'; $('afSubtype').value = ''; $('afAbv').value = '';
-        alcFormMsg('', ''); $('afName').focus();
-      }
-    });
-    $('afCancel').addEventListener('click', () => $('alcForm').classList.add('hidden'));
-    $('afSave').addEventListener('click', async () => {
-      const name = $('afName').value.trim();
-      if (!name) { alcFormMsg('Drink name is required.', 'err'); return; }
-      $('afSave').disabled = true;
-      alcFormMsg('Saving…', '');
-      try {
-        await DB.alcoholItemUpsert({
-          name, type: $('afType').value, subtype: $('afSubtype').value.trim(),
-          abv_percent: $('afAbv').value ? parseFloat($('afAbv').value) : null,
-          sort_order: activeAlcoholItems.length,
-        });
-        activeAlcoholItems = await DB.activeAlcoholItems();   // refetch so the new one shows up
-        populateLogAlcoholSelect();
-        $('alcForm').classList.add('hidden');
-        alcFormMsg('', '');
-      } catch (e) {
-        alcFormMsg('Save failed: ' + (e.message || ''), 'err');
-      } finally { $('afSave').disabled = false; }
-    });
 
     $('topbarLogDate').addEventListener('change', () => goToDate($('topbarLogDate').value));
     $('topbarTodayBtn').addEventListener('click', () => goToDate(todayDate()));

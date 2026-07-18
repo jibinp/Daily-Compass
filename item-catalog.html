@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Item Catalog — Daily Compass</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+  <meta name="theme-color" content="#0f172a" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Compass" />
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --field: #0f172a;
+      --border: #334155;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-press: #0ea5e9;
+      --ok: #22c55e;
+      --err: #f87171;
+    }
+    * { box-sizing: border-box; }
+    html { color-scheme: dark; scrollbar-width: none; }
+    ::-webkit-scrollbar { display: none; width: 0; height: 0; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding-bottom: 48px;
+    }
+    .wrap { width: 100%; max-width: 1000px; padding: 20px 20px 0; }
+    .field {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 14px; padding: 16px; margin-bottom: 14px;
+    }
+    .field-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+    .icon { font-size: 1.3rem; }
+    .label { font-weight: 600; font-size: 1.05rem; }
+    .muted-note { color: var(--muted); font-size: 0.85rem; line-height: 1.5; }
+    .hidden { display: none !important; }
+    /* topbar */
+    .topbar {
+      position: sticky; top: 0; z-index: 50;
+      width: 100%;
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 0.85rem; color: var(--muted);
+      padding: calc(12px + env(safe-area-inset-top)) 20px 12px; border-bottom: 1px solid var(--border);
+      background: var(--bg);
+    }
+    .topbar-title { font-weight: 700; font-size: 1rem; color: var(--text); }
+    .link-btn {
+      background: none; border: none; color: var(--accent);
+      cursor: pointer; font-size: 0.8rem; padding: 0;
+    }
+    /* ---- side drawer nav ---- */
+    .hamburger {
+      background: none; border: none; color: var(--text);
+      font-size: 1.4rem; line-height: 1; cursor: pointer; padding: 0;
+    }
+    .sidebar {
+      position: fixed; top: 0; left: 0; bottom: 0; width: 260px; max-width: 82vw;
+      background: var(--card); border-right: 1px solid var(--border);
+      transform: translateX(-100%); transition: transform 0.22s ease;
+      z-index: 110; display: flex; flex-direction: column; gap: 4px;
+      padding: 16px 12px;
+    }
+    .sidebar.open { transform: translateX(0); }
+    .sidebar-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 4px 8px 6px; margin-bottom: 8px;
+    }
+    .sidebar-title { font-weight: 700; font-size: 1.05rem; }
+    .sidebar-close {
+      background: none; border: none; color: var(--muted);
+      font-size: 1.2rem; line-height: 1; cursor: pointer; padding: 4px;
+    }
+    .sidebar-backdrop {
+      position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5);
+      z-index: 105; opacity: 0; pointer-events: none; transition: opacity 0.22s;
+    }
+    .sidebar-backdrop.open { opacity: 1; pointer-events: auto; }
+    /* ---- tree nav (explorer style) ---- */
+    .tree { display: flex; flex-direction: column; gap: 1px; margin-top: 4px; }
+    .tnode {
+      display: flex; align-items: center; gap: 6px;
+      padding: 6px 8px; border-radius: 6px;
+      color: var(--text); text-decoration: none; font-size: 0.9rem;
+      cursor: pointer; white-space: nowrap; user-select: none;
+    }
+    .tnode:hover { background: var(--field); }
+    .tnode.active { background: var(--field); color: var(--accent); font-weight: 600; }
+    .tnode.soon { opacity: 0.5; pointer-events: none; }
+    .nav-badge {
+      margin-left: auto; background: var(--err); color: #2a0505;
+      font-size: 0.68rem; font-weight: 700; line-height: 1;
+      border-radius: 999px; padding: 2px 6px;
+    }
+    .tw { width: 1em; font-size: 0.62rem; color: var(--muted); display: inline-block; text-align: center; transition: transform 0.15s; }
+    .tw-sp { width: 1em; display: inline-block; }
+    .tchildren { padding-left: 14px; }
+    .tchildren.collapsed { display: none; }
+    .tfolder.collapsed .tw { transform: rotate(-90deg); }
+    /* ---- catalog tabs ---- */
+    .cat-tabs {
+      position: sticky; top: var(--topbar-h, 0px); z-index: 40;
+      display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap;
+      background: var(--bg); padding-top: 4px;
+    }
+    .cat-tab {
+      background: var(--field); color: var(--text); border: 1px solid var(--border);
+      border-radius: 10px; padding: 9px 16px; font-weight: 600; font-size: 0.88rem; cursor: pointer;
+    }
+    .cat-tab.active { background: var(--accent); color: #04283a; border-color: var(--accent); }
+    /* ---- toolbar / form ---- */
+    .crs-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 12px 0 8px; }
+    .mini-btn {
+      background: var(--accent); color: #04283a; border: none;
+      border-radius: 8px; padding: 7px 12px; font-weight: 700;
+      font-size: 0.8rem; cursor: pointer; white-space: nowrap;
+    }
+    .mini-btn:active { background: var(--accent-press); transform: scale(0.97); }
+    .mini-btn:disabled { opacity: 0.5; cursor: default; }
+    .mini-btn.ghost { background: var(--field); color: var(--text); border: 1px solid var(--border); }
+    .mini-btn.danger { background: var(--err); color: #3a0a0a; }
+    .crs-msg { font-size: 0.83rem; margin: 6px 0; min-height: 1.1em; }
+    .crs-msg.ok { color: var(--ok); }
+    .crs-msg.err { color: var(--err); }
+    /* overflow-x alone would implicitly force overflow-y to 'auto' too (per
+       spec, 'visible' can't pair with a non-visible axis) — turning this
+       into its own scroll box. Made deliberate: bounded self-scrolling
+       table with a correctly-behaving sticky header. */
+    .table-wrap { overflow: auto; max-height: 65vh; margin-top: 8px; }
+    .crs-form { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+    .crs-form input, .crs-form textarea, .crs-form select {
+      background: var(--field); border: 1px solid var(--border);
+      color: var(--text); border-radius: 8px; padding: 9px 10px;
+      font-size: 0.88rem; color-scheme: dark; width: 100%; font-family: inherit;
+    }
+    .crs-form textarea { resize: vertical; }
+    .crs-form input:focus, .crs-form textarea:focus, .crs-form select:focus { outline: none; border-color: var(--accent); }
+    .btn-row { display: flex; gap: 8px; margin-top: 4px; }
+    /* ---- item list (manage) ---- */
+    .supp-table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+    .supp-table th, .supp-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: left; }
+    .supp-table th { color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--card); }
+    .supp-table tr.archived td { color: var(--muted); font-style: italic; }
+    .supp-table td.actions { text-align: right; white-space: nowrap; }
+    .supp-table td.actions .mini-btn { padding: 4px 8px; font-size: 0.75rem; }
+    .supp-table td.ing { white-space: normal; color: var(--muted); font-size: 0.82rem; max-width: 260px; }
+    .ing-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+    .ing-row input { flex: 1; min-width: 0; }
+    .ing-row input.ing-amount { flex: 0 0 60px; }
+    .ing-row input.ing-unit { flex: 0 0 60px; }
+    .ing-row input.ing-form { flex: 1 1 140px; }
+    .ing-row .ing-rm {
+      background: var(--field); border: 1px solid var(--border); color: var(--err);
+      border-radius: 8px; padding: 0 10px; cursor: pointer; font-size: 1rem; flex: 0 0 auto;
+    }
+    .tablet-thumb {
+      width: 56px; height: 56px; border-radius: 50%; object-fit: cover;
+      border: 1px solid var(--border); margin-top: 6px; display: block;
+    }
+    .tablet-thumb-sm {
+      width: 28px; height: 28px; border-radius: 50%; object-fit: cover;
+      border: 1px solid var(--border); flex: 0 0 auto; vertical-align: middle; margin-right: 8px;
+    }
+    .tablet-thumb-sm.placeholder {
+      display: inline-flex; align-items: center; justify-content: center;
+      background: var(--field); font-size: 0.85rem;
+    }
+  </style>
+</head>
+<body>
+  <!-- ---- side drawer nav ---- -->
+  <div class="sidebar-backdrop" id="navBackdrop"></div>
+  <nav class="sidebar" id="sidebar" aria-label="Main menu">
+    <div class="sidebar-head">
+      <span class="sidebar-title">🧭 Daily Compass</span>
+      <button class="sidebar-close" id="navClose" aria-label="Close menu">✕</button>
+    </div>
+    <div class="tree">
+      <a class="tnode" href="index.html"><span class="tw-sp"></span>🏠 Home</a>
+      <div class="tfolder tnode collapsed" data-group="g-health"><span class="tw">▾</span>🩺 Health Log</div>
+      <div class="tchildren collapsed" id="g-health">
+        <a class="tnode" href="health-log.html"><span class="tw-sp"></span>Data Entry</a>
+        <a class="tnode" href="bmi-history.html"><span class="tw-sp"></span>⚖️ BMI/BMR History</a>
+        <a class="tnode" href="time-history.html"><span class="tw-sp"></span>☀️ Time History</a>
+        <a class="tnode" href="alcohol-history.html"><span class="tw-sp"></span>🍸 Alcohol History</a>
+      </div>
+      <div class="tfolder tnode collapsed" data-group="g-temp"><span class="tw">▾</span>🗓️ Temporary</div>
+      <div class="tchildren collapsed" id="g-temp">
+        <div class="tfolder tnode collapsed" data-group="g-pr"><span class="tw">▾</span><svg width="14" height="9" viewBox="0 0 30 20" style="vertical-align:-1px;margin-right:4px;" aria-label="Canada"><rect width="30" height="20" fill="#fff" /><rect width="7.5" height="20" fill="#d52b1e" /><rect x="22.5" width="7.5" height="20" fill="#d52b1e" /><path fill="#d52b1e" d="M15 4l1 2.3 2.3-1-0.6 2.4 2.3 0.3-1.7 1.7 1.7 1.7-2.3 0.3 0.6 2.4-2.3-1-1 2.3-1-2.3-2.3 1 0.6-2.4-2.3-0.3 1.7-1.7-1.7-1.7 2.3-0.3-0.6-2.4 2.3 1z" /></svg>Canadian PR</div>
+        <div class="tchildren collapsed" id="g-pr">
+          <a class="tnode" href="temporary.html#pool"><span class="tw-sp"></span>📈 Pool breakdown</a>
+          <a class="tnode" href="temporary.html#growth"><span class="tw-sp"></span>🌱 Growth</a>
+          <a class="tnode" href="temporary.html#draws"><span class="tw-sp"></span>🎯 Draws</a>
+          <a class="tnode" href="temporary.html#analysis"><span class="tw-sp"></span>🔍 New candidates</a>
+          <a class="tnode" href="temporary.html#stats"><span class="tw-sp"></span>📐 Stats</a>
+          <a class="tnode" href="temporary.html#quota"><span class="tw-sp"></span>📊 Quota</a>
+        </div>
+      </div>
+      <div class="tfolder tnode collapsed" data-group="g-settings"><span class="tw">▾</span>⚙️ Settings<span class="nav-badge hidden" id="settingsBadge"></span></div>
+      <div class="tchildren collapsed" id="g-settings">
+        <a class="tnode active" href="item-catalog.html"><span class="tw-sp"></span>🗂️ Item Catalog</a>
+        <a class="tnode" href="developer.html"><span class="tw-sp"></span>🛠️ Developer</a>
+        <a class="tnode" href="thresholds.html"><span class="tw-sp"></span>🎯 Thresholds</a>
+      </div>
+    </div>
+  </nav>
+
+  <div class="topbar">
+    <button class="hamburger" id="navToggle" aria-label="Open menu">☰</button>
+    <span class="topbar-title">🗂️ Item Catalog</span>
+    <button class="link-btn" id="logoutBtn">Log out</button>
+  </div>
+
+  <div class="wrap">
+    <div id="appView" class="hidden">
+
+      <div class="cat-tabs">
+        <button class="cat-tab active" id="tabBtnSupp" data-tab="supp">💊 Supplements</button>
+        <button class="cat-tab" id="tabBtnAlc" data-tab="alc">🍺 Alcohol</button>
+        <button class="cat-tab" id="tabBtnFood" data-tab="food">🍎 Food Items</button>
+      </div>
+
+      <!-- ============ Supplements tab ============ -->
+      <div id="tabSupp">
+        <section class="field">
+          <div class="field-head"><span class="icon">💊</span><span class="label">Tablets</span></div>
+          <div class="muted-note">Daily taken/not-taken entry happens on <a href="health-log.html" style="color:var(--accent);">Data Entry</a>. Add, edit, or archive tablets here — archiving keeps history intact.</div>
+
+          <div id="suppMsg" class="crs-msg"></div>
+          <div class="crs-toolbar">
+            <button class="mini-btn ghost" id="suppAddToggle">＋ Add tablet</button>
+          </div>
+
+          <div id="suppForm" class="crs-form hidden">
+            <input type="hidden" id="sfOrigName" />
+            <label class="muted-note" for="sfName">Tablet name</label>
+            <input type="text" id="sfName" placeholder="e.g. Daily Multivitamin" />
+            <label class="muted-note" for="sfDose">Serving</label>
+            <input type="text" id="sfDose" placeholder="e.g. 1 tablet" />
+            <label class="muted-note" for="sfImage">Picture</label>
+            <input type="file" id="sfImage" accept="image/*" />
+            <img id="sfImagePreview" class="tablet-thumb hidden" alt="" />
+            <label class="muted-note" for="sfNotes">Notes</label>
+            <textarea id="sfNotes" rows="2" placeholder="Optional"></textarea>
+            <label class="muted-note">Ingredients</label>
+            <div id="sfIngredients"></div>
+            <button class="mini-btn ghost" id="sfIngAdd" type="button">＋ Add ingredient</button>
+            <div class="btn-row">
+              <button class="mini-btn" id="sfSave">Save</button>
+              <button class="mini-btn ghost" id="sfCancel">Cancel</button>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table class="supp-table" id="suppTable"></table>
+          </div>
+        </section>
+      </div>
+
+      <!-- ============ Alcohol tab ============ -->
+      <div id="tabAlc" class="hidden">
+        <section class="field">
+          <div class="field-head"><span class="icon">🍺</span><span class="label">Drinks</span></div>
+          <div class="muted-note">Logging a drink happens on <a href="health-log.html" style="color:var(--accent);">Data Entry</a>. Add, edit, or archive drinks here.</div>
+
+          <div id="alcMsg" class="crs-msg"></div>
+          <div class="crs-toolbar">
+            <button class="mini-btn ghost" id="alcAddToggle">＋ Add drink</button>
+          </div>
+
+          <div id="alcForm" class="crs-form hidden">
+            <input type="hidden" id="afOrigName" />
+            <label class="muted-note" for="afName">Drink name</label>
+            <input type="text" id="afName" placeholder="e.g. Jack Daniel's" />
+            <label class="muted-note" for="afType">Type</label>
+            <select id="afType">
+              <option value="Hard Liquor">Hard Liquor</option>
+              <option value="Wine">Wine</option>
+              <option value="Beer">Beer</option>
+            </select>
+            <label class="muted-note" for="afSubtype">Subtype</label>
+            <input type="text" id="afSubtype" placeholder="e.g. Whiskey, Red, Lager" />
+            <label class="muted-note" for="afAbv">Alcohol content (% ABV)</label>
+            <input type="number" step="any" id="afAbv" placeholder="e.g. 40" />
+            <label class="muted-note" for="afNotes">Notes</label>
+            <textarea id="afNotes" rows="2" placeholder="Optional"></textarea>
+            <div class="btn-row">
+              <button class="mini-btn" id="afSave">Save</button>
+              <button class="mini-btn ghost" id="afCancel">Cancel</button>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table class="supp-table" id="alcTable"></table>
+          </div>
+        </section>
+      </div>
+
+      <!-- ============ Food Items tab ============ -->
+      <div id="tabFood" class="hidden">
+        <section class="field">
+          <div class="field-head"><span class="icon">🍎</span><span class="label">Food items</span></div>
+          <div class="muted-note">Logging food happens on <a href="health-log.html" style="color:var(--accent);">Data Entry</a>. Add, edit, or archive items here.</div>
+
+          <div id="foodMsg" class="crs-msg"></div>
+          <div class="crs-toolbar">
+            <button class="mini-btn ghost" id="foodAddToggle">＋ Add food item</button>
+          </div>
+
+          <div id="foodForm" class="crs-form hidden">
+            <input type="hidden" id="fiOrigName" />
+            <label class="muted-note" for="fiName">Food item name</label>
+            <input type="text" id="fiName" placeholder="e.g. Banana" />
+            <div class="btn-row">
+              <button class="mini-btn" id="fiSave">Save</button>
+              <button class="mini-btn ghost" id="fiCancel">Cancel</button>
+            </div>
+          </div>
+
+          <div class="table-wrap">
+            <table class="supp-table" id="foodTable"></table>
+          </div>
+        </section>
+      </div>
+
+    </div>
+  </div>
+
+  <script type="module">
+    import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+    // ---- config (anon/publishable key; RLS protects data) ----
+    const SUPABASE_URL = 'https://twpzcszcvylhaopcwqkv.supabase.co';
+    const SUPABASE_KEY = 'sb_publishable_c1BhUlrZPf2YsXW_5LdrZw_-wYh4lJM';
+    const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    // single data-access surface (HLD §9)
+    const DB = {
+      onAuthChange(cb) { supabase.auth.onAuthStateChange((_e, s) => cb(s)); },
+      async currentSession() { const { data } = await supabase.auth.getSession(); return data.session; },
+      async signOut() { await supabase.auth.signOut(); },
+
+      // ---- Supplements ----
+      async supplementsAll() {
+        const { data, error } = await supabase.from('supplements')
+          .select('name, dose, notes, active, sort_order, image_url').order('sort_order', { ascending: true }).order('name', { ascending: true });
+        if (error) throw error;
+        return data;
+      },
+      async supplementUpsert({ name, dose, notes, active, sort_order, image_url }) {
+        const { error } = await supabase.from('supplements').upsert({
+          name, dose: dose || null, notes: notes || null,
+          active: active !== false, sort_order: sort_order ?? 0, image_url: image_url || null,
+        }, { onConflict: 'name' });
+        if (error) throw error;
+      },
+      // True rename — name is the primary key, so this moves the row plus
+      // every historical reference (log, received) to the new name instead
+      // of archiving the old row and creating a fresh duplicate. Ingredients
+      // aren't migrated here: the old row's cascade-delete clears them, and
+      // the caller re-inserts current ones under the new name right after.
+      async supplementRename(oldName, newName, fields) {
+        const ins = await supabase.from('supplements').upsert({ name: newName, ...fields }, { onConflict: 'name' });
+        if (ins.error) throw ins.error;
+        const logUpd = await supabase.from('supplement_log').update({ supplement: newName }).eq('supplement', oldName);
+        if (logUpd.error) throw logUpd.error;
+        const recvUpd = await supabase.from('supplement_received').update({ supplement: newName }).eq('supplement', oldName);
+        if (recvUpd.error) throw recvUpd.error;
+        const del = await supabase.from('supplements').delete().eq('name', oldName);
+        if (del.error) throw del.error;
+      },
+      async uploadTabletImage(file, tabletName) {
+        const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
+        const path = `${tabletName.replace(/[^a-z0-9]/gi, '_')}-${Date.now()}.${ext}`;
+        const { error } = await supabase.storage.from('tablet-images').upload(path, file, { upsert: true });
+        if (error) throw error;
+        const { data } = supabase.storage.from('tablet-images').getPublicUrl(path);
+        return data.publicUrl;
+      },
+      async supplementSetActive(name, active) {
+        const { error } = await supabase.from('supplements').update({ active }).eq('name', name);
+        if (error) throw error;
+      },
+      async ingredientsAll() {
+        const { data, error } = await supabase.from('supplement_ingredients')
+          .select('supplement, ingredient, amount_value, amount_unit, amount_form').order('sort_order', { ascending: true });
+        if (error) throw error;
+        return data;
+      },
+      async ingredientsReplace(supplement, ingredients) {
+        const del = await supabase.from('supplement_ingredients').delete().eq('supplement', supplement);
+        if (del.error) throw del.error;
+        if (!ingredients.length) return;
+        const rows = ingredients.map((ing, i) => ({
+          supplement, ingredient: ing.ingredient,
+          amount_value: ing.amount_value, amount_unit: ing.amount_unit, amount_form: ing.amount_form,
+          sort_order: i,
+        }));
+        const ins = await supabase.from('supplement_ingredients').insert(rows);
+        if (ins.error) throw ins.error;
+      },
+
+      // ---- Alcohol items ----
+      async alcoholItemsAll() {
+        const { data, error } = await supabase.from('alcohol_items')
+          .select('name, type, subtype, abv_percent, notes, active, sort_order')
+          .order('sort_order', { ascending: true }).order('name', { ascending: true });
+        if (error) throw error;
+        return data;
+      },
+      async alcoholItemUpsert({ name, type, subtype, abv_percent, notes, active, sort_order }) {
+        const { error } = await supabase.from('alcohol_items').upsert({
+          name, type, subtype: subtype || null, abv_percent: abv_percent ?? null, notes: notes || null,
+          active: active !== false, sort_order: sort_order ?? 0,
+        }, { onConflict: 'name' });
+        if (error) throw error;
+      },
+      // Same rename-safety as supplements — alcohol_log.alcohol_item
+      // references alcohol_items(name) on delete cascade.
+      async alcoholItemRename(oldName, newName, fields) {
+        const ins = await supabase.from('alcohol_items').upsert({ name: newName, ...fields }, { onConflict: 'name' });
+        if (ins.error) throw ins.error;
+        const logUpd = await supabase.from('alcohol_log').update({ alcohol_item: newName }).eq('alcohol_item', oldName);
+        if (logUpd.error) throw logUpd.error;
+        const del = await supabase.from('alcohol_items').delete().eq('name', oldName);
+        if (del.error) throw del.error;
+      },
+      async alcoholItemSetActive(name, active) {
+        const { error } = await supabase.from('alcohol_items').update({ active }).eq('name', name);
+        if (error) throw error;
+      },
+
+      // ---- Food items ----
+      async foodItemsAll() {
+        const { data, error } = await supabase.from('food_items')
+          .select('name, active, sort_order').order('sort_order', { ascending: true }).order('name', { ascending: true });
+        if (error) throw error;
+        return data;
+      },
+      async foodItemUpsert({ name, active, sort_order }) {
+        const { error } = await supabase.from('food_items').upsert({
+          name, active: active !== false, sort_order: sort_order ?? 0,
+        }, { onConflict: 'name' });
+        if (error) throw error;
+      },
+      // Same rename-safety as supplements — food_log.food_item references
+      // food_items(name) on delete cascade.
+      async foodItemRename(oldName, newName, fields) {
+        const ins = await supabase.from('food_items').upsert({ name: newName, ...fields }, { onConflict: 'name' });
+        if (ins.error) throw ins.error;
+        const logUpd = await supabase.from('food_log').update({ food_item: newName }).eq('food_item', oldName);
+        if (logUpd.error) throw logUpd.error;
+        const del = await supabase.from('food_items').delete().eq('name', oldName);
+        if (del.error) throw del.error;
+      },
+      async foodItemSetActive(name, active) {
+        const { error } = await supabase.from('food_items').update({ active }).eq('name', name);
+        if (error) throw error;
+      },
+    };
+
+    const $ = id => document.getElementById(id);
+
+    // Topbar is sticky; keep --topbar-h in sync with its real rendered
+    // height (it wraps on narrow screens) so the tab bar sits right under
+    // it instead of overlapping.
+    function updateStickyOffsets() {
+      const topbarEl = document.querySelector('.topbar');
+      document.documentElement.style.setProperty('--topbar-h', (topbarEl ? topbarEl.offsetHeight : 0) + 'px');
+    }
+    window.addEventListener('resize', updateStickyOffsets);
+    updateStickyOffsets();
+
+    // ---- side drawer nav ----
+    const openNav  = () => { $('sidebar').classList.add('open'); $('navBackdrop').classList.add('open'); };
+    const closeNav = () => { $('sidebar').classList.remove('open'); $('navBackdrop').classList.remove('open'); };
+    $('navToggle').addEventListener('click', openNav);
+    $('navClose').addEventListener('click', closeNav);
+    $('navBackdrop').addEventListener('click', closeNav);
+    (function updateSettingsBadge() {
+      try {
+        const log = JSON.parse(localStorage.getItem('dc_dev_errors') || '[]');
+        const badge = document.getElementById('settingsBadge');
+        if (badge && log.length) { badge.textContent = log.length; badge.classList.remove('hidden'); }
+      } catch { /* localStorage unavailable */ }
+    })();
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeNav(); });
+    $('sidebar').addEventListener('click', e => {
+      const f = e.target.closest('.tfolder');
+      if (f) {
+        const g = document.getElementById(f.dataset.group);
+        if (g) g.classList.toggle('collapsed');
+        f.classList.toggle('collapsed');
+        return;
+      }
+      if (e.target.closest('a.tnode')) closeNav();
+    });
+
+    $('logoutBtn').addEventListener('click', async () => { await DB.signOut(); });
+
+    // ---- tab switching (deep-linkable via #supp / #alc / #food, e.g. from
+    // Data Entry's "Manage in Item Catalog" links) ----
+    const TABS = { supp: 'tabSupp', alc: 'tabAlc', food: 'tabFood' };
+    function selectTab(key) {
+      if (!TABS[key]) return;
+      document.querySelectorAll('.cat-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === key));
+      Object.entries(TABS).forEach(([k, id]) => $(id).classList.toggle('hidden', k !== key));
+    }
+    document.querySelectorAll('.cat-tab').forEach(btn => {
+      btn.addEventListener('click', () => { selectTab(btn.dataset.tab); location.hash = btn.dataset.tab; });
+    });
+    window.addEventListener('hashchange', () => selectTab(location.hash.replace('#', '')));
+
+    const msgFn = (elId) => (text, kind) => {
+      const el = $(elId); el.textContent = text || '';
+      el.className = 'crs-msg' + (kind ? ' ' + kind : '');
+    };
+    const suppMsg = msgFn('suppMsg');
+    const alcMsg = msgFn('alcMsg');
+    const foodMsg = msgFn('foodMsg');
+
+    // ================================================================
+    // Supplements
+    // ================================================================
+    let supplements = [];
+    let ingredientsBySupp = {};
+
+    function addIngredientRow(ingredient = '', amountValue = '', amountUnit = '', amountForm = '') {
+      const row = document.createElement('div');
+      row.className = 'ing-row';
+      row.innerHTML = `
+        <input type="text" class="ing-name" placeholder="Ingredient, e.g. Vitamin D3" value="${ingredient}" />
+        <input type="number" step="any" class="ing-amount" placeholder="Amt" value="${amountValue}" />
+        <input type="text" class="ing-unit" placeholder="Unit" value="${amountUnit}" />
+        <input type="text" class="ing-form" placeholder="Form, e.g. Zinc Citrate" value="${amountForm}" />
+        <button type="button" class="ing-rm" title="Remove">✕</button>`;
+      row.querySelector('.ing-rm').addEventListener('click', () => row.remove());
+      $('sfIngredients').appendChild(row);
+    }
+    function collectIngredients() {
+      return [...$('sfIngredients').querySelectorAll('.ing-row')]
+        .map(row => {
+          const rawAmount = row.querySelector('.ing-amount').value.trim();
+          return {
+            ingredient: row.querySelector('.ing-name').value.trim(),
+            amount_value: rawAmount === '' ? null : Number(rawAmount),
+            amount_unit: row.querySelector('.ing-unit').value.trim() || null,
+            amount_form: row.querySelector('.ing-form').value.trim() || null,
+          };
+        })
+        .filter(i => i.ingredient);
+    }
+    $('sfIngAdd').addEventListener('click', () => addIngredientRow());
+    $('sfImage').addEventListener('change', () => {
+      const file = $('sfImage').files[0];
+      const preview = $('sfImagePreview');
+      if (!file) return;
+      preview.src = URL.createObjectURL(file);
+      preview.classList.remove('hidden');
+    });
+
+    let openSuppImageUrl = null;
+    function openSuppForm(s) {
+      $('sfOrigName').value = s ? s.name : '';
+      $('sfName').value = s ? s.name : '';
+      $('sfDose').value = s ? (s.dose || '') : '';
+      $('sfNotes').value = s ? (s.notes || '') : '';
+      $('sfImage').value = '';
+      openSuppImageUrl = s ? (s.image_url || null) : null;
+      const preview = $('sfImagePreview');
+      if (openSuppImageUrl) { preview.src = openSuppImageUrl; preview.classList.remove('hidden'); }
+      else { preview.src = ''; preview.classList.add('hidden'); }
+      $('sfIngredients').innerHTML = '';
+      const ings = s ? (ingredientsBySupp[s.name] || []) : [];
+      if (ings.length) ings.forEach(i => addIngredientRow(i.ingredient, i.amount_value ?? '', i.amount_unit || '', i.amount_form || ''));
+      else addIngredientRow();
+      $('suppForm').classList.remove('hidden');
+      suppMsg('', '');
+      $('sfName').focus();
+    }
+    $('suppAddToggle').addEventListener('click', () => {
+      if ($('suppForm').classList.contains('hidden')) openSuppForm(null);
+      else $('suppForm').classList.add('hidden');
+    });
+    $('sfCancel').addEventListener('click', () => $('suppForm').classList.add('hidden'));
+    $('sfSave').addEventListener('click', async () => {
+      const name = $('sfName').value.trim();
+      if (!name) { suppMsg('Name is required.', 'err'); return; }
+      const origName = $('sfOrigName').value;
+      $('sfSave').disabled = true;
+      suppMsg('Saving…', '');
+      try {
+        let imageUrl = openSuppImageUrl;
+        const file = $('sfImage').files[0];
+        if (file) imageUrl = await DB.uploadTabletImage(file, name);
+        const renaming = origName && origName !== name;
+        const existing = supplements.find(s => s.name === (renaming ? origName : name));
+        const fields = {
+          dose: $('sfDose').value.trim(), notes: $('sfNotes').value.trim(),
+          active: true, sort_order: existing ? existing.sort_order : supplements.length, image_url: imageUrl,
+        };
+        if (renaming) await DB.supplementRename(origName, name, fields);
+        else await DB.supplementUpsert({ name, ...fields });
+        await DB.ingredientsReplace(name, collectIngredients());
+        suppMsg('Saved.', 'ok');
+        $('suppForm').classList.add('hidden');
+        await loadSupplements();
+      } catch (e) {
+        suppMsg('Save failed: ' + (e.message || ''), 'err');
+      } finally { $('sfSave').disabled = false; }
+    });
+
+    function renderSuppTable() {
+      const t = $('suppTable');
+      let html = '<thead><tr><th>Tablet</th><th>Serving</th><th>Ingredients</th><th>Notes</th><th>Status</th><th></th></tr></thead><tbody>';
+      if (!supplements.length) {
+        html += '<tr><td colspan="6" class="muted-note">No tablets yet — add one above.</td></tr>';
+      }
+      for (const s of supplements) {
+        const ings = ingredientsBySupp[s.name] || [];
+        const ingText = ings.length
+          ? ings.map(i => {
+              const amt = [i.amount_value, i.amount_unit].filter(Boolean).join(' ');
+              const parts = [amt, i.amount_form].filter(Boolean).join(' ');
+              return parts ? `${i.ingredient} (${parts})` : i.ingredient;
+            }).join(', ')
+          : '—';
+        const thumb = s.image_url
+          ? `<img src="${s.image_url}" class="tablet-thumb-sm" alt="" />`
+          : '<span class="tablet-thumb-sm placeholder">💊</span>';
+        html += `<tr class="${s.active ? '' : 'archived'}">
+          <td>${thumb}${s.name}</td><td>${s.dose || '—'}</td><td class="ing">${ingText}</td><td>${s.notes || '—'}</td>
+          <td>${s.active ? 'Active' : 'Archived'}</td>
+          <td class="actions">
+            <button class="mini-btn ghost" data-edit="${s.name}">Edit</button>
+            <button class="mini-btn ${s.active ? 'danger' : ''}" data-toggle="${s.name}">${s.active ? 'Archive' : 'Restore'}</button>
+          </td>
+        </tr>`;
+      }
+      html += '</tbody>';
+      t.innerHTML = html;
+      t.querySelectorAll('[data-edit]').forEach(btn => btn.addEventListener('click', () => {
+        openSuppForm(supplements.find(s => s.name === btn.dataset.edit));
+      }));
+      t.querySelectorAll('[data-toggle]').forEach(btn => btn.addEventListener('click', async () => {
+        const s = supplements.find(x => x.name === btn.dataset.toggle);
+        try {
+          await DB.supplementSetActive(s.name, !s.active);
+          await loadSupplements();
+        } catch (e) { suppMsg('Update failed: ' + (e.message || ''), 'err'); }
+      }));
+    }
+
+    async function loadSupplements() {
+      const [supps, ings] = await Promise.all([DB.supplementsAll(), DB.ingredientsAll()]);
+      supplements = supps;
+      ingredientsBySupp = {};
+      for (const i of ings) (ingredientsBySupp[i.supplement] ||= []).push(i);
+      renderSuppTable();
+    }
+
+    // ================================================================
+    // Alcohol items
+    // ================================================================
+    let alcoholItems = [];
+
+    function openAlcForm(a) {
+      $('afOrigName').value = a ? a.name : '';
+      $('afName').value = a ? a.name : '';
+      $('afType').value = a ? a.type : 'Hard Liquor';
+      $('afSubtype').value = a ? (a.subtype || '') : '';
+      $('afAbv').value = a ? (a.abv_percent ?? '') : '';
+      $('afNotes').value = a ? (a.notes || '') : '';
+      $('alcForm').classList.remove('hidden');
+      alcMsg('', '');
+      $('afName').focus();
+    }
+    $('alcAddToggle').addEventListener('click', () => {
+      if ($('alcForm').classList.contains('hidden')) openAlcForm(null);
+      else $('alcForm').classList.add('hidden');
+    });
+    $('afCancel').addEventListener('click', () => $('alcForm').classList.add('hidden'));
+    $('afSave').addEventListener('click', async () => {
+      const name = $('afName').value.trim();
+      if (!name) { alcMsg('Drink name is required.', 'err'); return; }
+      const origName = $('afOrigName').value;
+      $('afSave').disabled = true;
+      alcMsg('Saving…', '');
+      try {
+        const renaming = origName && origName !== name;
+        const existing = alcoholItems.find(a => a.name === (renaming ? origName : name));
+        const fields = {
+          type: $('afType').value, subtype: $('afSubtype').value.trim(),
+          abv_percent: $('afAbv').value ? parseFloat($('afAbv').value) : null,
+          notes: $('afNotes').value.trim(), active: true,
+          sort_order: existing ? existing.sort_order : alcoholItems.length,
+        };
+        if (renaming) await DB.alcoholItemRename(origName, name, fields);
+        else await DB.alcoholItemUpsert({ name, ...fields });
+        alcMsg('Saved.', 'ok');
+        $('alcForm').classList.add('hidden');
+        await loadAlcoholItems();
+      } catch (e) {
+        alcMsg('Save failed: ' + (e.message || ''), 'err');
+      } finally { $('afSave').disabled = false; }
+    });
+
+    function renderAlcTable() {
+      const t = $('alcTable');
+      let html = '<thead><tr><th>Drink</th><th>Type</th><th>Subtype</th><th>ABV%</th><th>Status</th><th></th></tr></thead><tbody>';
+      if (!alcoholItems.length) {
+        html += '<tr><td colspan="6" class="muted-note">No drinks yet — add one above.</td></tr>';
+      }
+      for (const a of alcoholItems) {
+        html += `<tr class="${a.active ? '' : 'archived'}">
+          <td>${a.name}</td><td>${a.type || '—'}</td><td>${a.subtype || '—'}</td><td>${a.abv_percent ?? '—'}</td>
+          <td>${a.active ? 'Active' : 'Archived'}</td>
+          <td class="actions">
+            <button class="mini-btn ghost" data-edit="${a.name}">Edit</button>
+            <button class="mini-btn ${a.active ? 'danger' : ''}" data-toggle="${a.name}">${a.active ? 'Archive' : 'Restore'}</button>
+          </td>
+        </tr>`;
+      }
+      html += '</tbody>';
+      t.innerHTML = html;
+      t.querySelectorAll('[data-edit]').forEach(btn => btn.addEventListener('click', () => {
+        openAlcForm(alcoholItems.find(a => a.name === btn.dataset.edit));
+      }));
+      t.querySelectorAll('[data-toggle]').forEach(btn => btn.addEventListener('click', async () => {
+        const a = alcoholItems.find(x => x.name === btn.dataset.toggle);
+        try {
+          await DB.alcoholItemSetActive(a.name, !a.active);
+          await loadAlcoholItems();
+        } catch (e) { alcMsg('Update failed: ' + (e.message || ''), 'err'); }
+      }));
+    }
+
+    async function loadAlcoholItems() {
+      alcoholItems = await DB.alcoholItemsAll();
+      renderAlcTable();
+    }
+
+    // ================================================================
+    // Food items
+    // ================================================================
+    let foodItems = [];
+
+    function openFoodForm(f) {
+      $('fiOrigName').value = f ? f.name : '';
+      $('fiName').value = f ? f.name : '';
+      $('foodForm').classList.remove('hidden');
+      foodMsg('', '');
+      $('fiName').focus();
+    }
+    $('foodAddToggle').addEventListener('click', () => {
+      if ($('foodForm').classList.contains('hidden')) openFoodForm(null);
+      else $('foodForm').classList.add('hidden');
+    });
+    $('fiCancel').addEventListener('click', () => $('foodForm').classList.add('hidden'));
+    $('fiSave').addEventListener('click', async () => {
+      const name = $('fiName').value.trim();
+      if (!name) { foodMsg('Name is required.', 'err'); return; }
+      const origName = $('fiOrigName').value;
+      $('fiSave').disabled = true;
+      foodMsg('Saving…', '');
+      try {
+        const renaming = origName && origName !== name;
+        const existing = foodItems.find(f => f.name === (renaming ? origName : name));
+        const fields = { active: true, sort_order: existing ? existing.sort_order : foodItems.length };
+        if (renaming) await DB.foodItemRename(origName, name, fields);
+        else await DB.foodItemUpsert({ name, ...fields });
+        foodMsg('Saved.', 'ok');
+        $('foodForm').classList.add('hidden');
+        await loadFoodItems();
+      } catch (e) {
+        foodMsg('Save failed: ' + (e.message || ''), 'err');
+      } finally { $('fiSave').disabled = false; }
+    });
+
+    function renderFoodTable() {
+      const t = $('foodTable');
+      let html = '<thead><tr><th>Food item</th><th>Status</th><th></th></tr></thead><tbody>';
+      if (!foodItems.length) {
+        html += '<tr><td colspan="3" class="muted-note">No food items yet — add one above.</td></tr>';
+      }
+      for (const f of foodItems) {
+        html += `<tr class="${f.active ? '' : 'archived'}">
+          <td>${f.name}</td>
+          <td>${f.active ? 'Active' : 'Archived'}</td>
+          <td class="actions">
+            <button class="mini-btn ghost" data-edit="${f.name}">Edit</button>
+            <button class="mini-btn ${f.active ? 'danger' : ''}" data-toggle="${f.name}">${f.active ? 'Archive' : 'Restore'}</button>
+          </td>
+        </tr>`;
+      }
+      html += '</tbody>';
+      t.innerHTML = html;
+      t.querySelectorAll('[data-edit]').forEach(btn => btn.addEventListener('click', () => {
+        openFoodForm(foodItems.find(f => f.name === btn.dataset.edit));
+      }));
+      t.querySelectorAll('[data-toggle]').forEach(btn => btn.addEventListener('click', async () => {
+        const f = foodItems.find(x => x.name === btn.dataset.toggle);
+        try {
+          await DB.foodItemSetActive(f.name, !f.active);
+          await loadFoodItems();
+        } catch (e) { foodMsg('Update failed: ' + (e.message || ''), 'err'); }
+      }));
+    }
+
+    async function loadFoodItems() {
+      foodItems = await DB.foodItemsAll();
+      renderFoodTable();
+    }
+
+    // ---- route: no session → sign in on the picker page ----
+    function showLogin() { window.location.replace('index.html'); }
+    async function showApp() {
+      $('appView').classList.remove('hidden');
+      try {
+        await loadSupplements();
+        await loadAlcoholItems();
+        await loadFoodItems();
+      } catch (e) {
+        suppMsg('Could not load: ' + (e.message || ''), 'err');
+      }
+      const h = location.hash.replace('#', '');
+      if (TABS[h]) selectTab(h);
+    }
+
+    DB.onAuthChange(session => { if (session) showApp(); else showLogin(); });
+    DB.currentSession().then(s => { if (s) showApp(); else showLogin(); });
+  </script>
+</body>
+</html>

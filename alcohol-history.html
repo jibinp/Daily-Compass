@@ -130,7 +130,7 @@
     table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
     th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
     th { color: var(--muted); font-weight: 600; background: var(--card); position: sticky; top: 0; }
-    .total-val { border-bottom: 1px dotted var(--muted); cursor: help; font-weight: 600; }
+    .total-val { border-bottom: 1px dotted var(--muted); cursor: help; font-weight: 600; color: var(--err); }
     .total-val.zero { color: var(--muted); font-weight: 400; border-bottom: none; cursor: default; }
     .msg { text-align: center; font-size: 0.9rem; margin: 12px 0; min-height: 1.2em; }
     .msg.ok { color: var(--ok); }
@@ -150,7 +150,6 @@
       <div class="tfolder tnode collapsed" data-group="g-health"><span class="tw">▾</span>🩺 Health Log</div>
       <div class="tchildren collapsed" id="g-health">
         <a class="tnode" href="health-log.html"><span class="tw-sp"></span>Data Entry</a>
-        <a class="tnode" href="supplement-tracker.html"><span class="tw-sp"></span>Tablet Ingredient Updater</a>
         <a class="tnode" href="bmi-history.html"><span class="tw-sp"></span>⚖️ BMI/BMR History</a>
         <a class="tnode" href="time-history.html"><span class="tw-sp"></span>☀️ Time History</a>
         <a class="tnode active" href="alcohol-history.html"><span class="tw-sp"></span>🍸 Alcohol History</a>
@@ -169,6 +168,7 @@
       </div>
       <div class="tfolder tnode collapsed" data-group="g-settings"><span class="tw">▾</span>⚙️ Settings<span class="nav-badge hidden" id="settingsBadge"></span></div>
       <div class="tchildren collapsed" id="g-settings">
+        <a class="tnode" href="item-catalog.html"><span class="tw-sp"></span>🗂️ Item Catalog</a>
         <a class="tnode" href="developer.html"><span class="tw-sp"></span>🛠️ Developer</a>
         <a class="tnode" href="thresholds.html"><span class="tw-sp"></span>🎯 Thresholds</a>
       </div>
@@ -200,6 +200,13 @@
           <label class="muted-note" for="rangeTo">To</label>
           <input type="date" id="rangeTo" />
           <button class="mini-btn ghost" id="rangeApply">Apply</button>
+        </div>
+        <div class="range-bar">
+          <span class="muted-note">Sort:</span>
+          <button class="mini-btn" id="sortDateDesc" data-active="1">Date ↓ newest</button>
+          <button class="mini-btn ghost" id="sortDateAsc">Date ↑ oldest</button>
+          <button class="mini-btn ghost" id="sortTotalDesc">Total ↓ highest</button>
+          <button class="mini-btn ghost" id="sortTotalAsc">Total ↑ lowest</button>
         </div>
         <div class="msg" id="dataMsg"></div>
         <div class="table-wrap">
@@ -260,17 +267,22 @@
       // can reference an item that's since been deactivated), for the
       // name -> type lookup used to split totals into Hard Liquor/Wine/Beer.
       async allAlcoholItemTypes() {
-        const { data, error } = await supabase.from('alcohol_items').select('name, type');
+        const { data, error } = await supabase.from('alcohol_items').select('name, type, abv_percent');
         if (error) throw error;
         const map = {};
-        for (const r of data) map[r.name] = r.type;
+        for (const r of data) map[r.name] = { type: r.type, abv: r.abv_percent };
         return map;
       },
     };
 
     const $ = id => document.getElementById(id);
-    const isoDate = d => d.toISOString().slice(0, 10);
     const pad = n => String(n).padStart(2, '0');
+    // Local calendar date, NOT toISOString().slice(0,10) — that's UTC-based
+    // and shifts the date backward for positive-UTC-offset zones (e.g. IST)
+    // whenever the local time is past UTC midnight, silently dropping
+    // "today" from the range. log_date everywhere else in this app is a
+    // local calendar date, so date math here has to match.
+    const isoDate = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
     const todayDate = () => {
       const d = new Date();
       return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -321,10 +333,11 @@
       return out;
     }
 
-    // name -> type ('Hard Liquor' | 'Wine' | 'Beer') for every item ever
-    // logged, loaded once — see DB.allAlcoholItemTypes.
+    // name -> { type, abv } for every item ever logged, loaded once — see
+    // DB.allAlcoholItemTypes.
     let itemTypes = {};
-    const typeOf = name => itemTypes[name] || 'Other';
+    const typeOf = name => (itemTypes[name] && itemTypes[name].type) || 'Other';
+    const abvOf = name => itemTypes[name] && itemTypes[name].abv;
 
     function cell(count, tip) {
       if (!count) return '<td><span class="total-val zero">0</span></td>';
@@ -342,7 +355,8 @@
         total += r.shots || 0;
       }
       const sumOf = list => list.reduce((s, r) => s + (r.shots || 0), 0);
-      const tipOf = list => list.map(r => `${r.alcohol_item}: ${r.shots}`).join('\n');
+      const abvTag = name => { const a = abvOf(name); return a != null ? ` (${a}% ABV)` : ''; };
+      const tipOf = list => list.map(r => `${r.alcohol_item}: ${r.shots}${abvTag(r.alcohol_item)}`).join('\n');
       const totalTip = tipOf(dayRows);
       return `<tr>
         <td>${dateLabel}</td>
@@ -353,21 +367,34 @@
       </tr>`;
     }
 
-    function renderTable(from, to, rows) {
+    const totalOf = dayRows => dayRows.reduce((s, r) => s + (r.shots || 0), 0);
+
+    function renderTable(from, to, rows, sort) {
       const body = $('dataBody');
       const byDate = {};
       for (const r of rows) (byDate[r.log_date] = byDate[r.log_date] || []).push(r);
-      const dates = dateRangeDesc(from, to);
+      let dates = dateRangeDesc(from, to);   // starts newest-first
       if (!dates.length) { body.innerHTML = '<tr><td colspan="5">Nothing yet.</td></tr>'; return; }
+      if (sort === 'date-asc') dates = dates.slice().reverse();
+      else if (sort === 'total-desc') dates = dates.slice().sort((a, b) => totalOf(byDate[b] || []) - totalOf(byDate[a] || []));
+      else if (sort === 'total-asc') dates = dates.slice().sort((a, b) => totalOf(byDate[a] || []) - totalOf(byDate[b] || []));
       body.innerHTML = dates.map(d => renderRow(d, byDate[d] || [])).join('');
     }
 
     // currentRange.from/to always resolved to concrete dates (never null) —
     // every-date zero-fill needs real bounds to iterate over.
     let currentRange = { from: null, to: null };
+    let currentSort = 'date-desc';
+    let lastRows = [];   // cached so changing sort doesn't need a refetch
 
     function setActiveQuickBtn(id) {
       ['rangeLast50', 'rangeAll'].forEach(btnId => {
+        if (btnId === id) $(btnId).dataset.active = '1';
+        else delete $(btnId).dataset.active;
+      });
+    }
+    function setActiveSortBtn(id) {
+      ['sortDateDesc', 'sortDateAsc', 'sortTotalDesc', 'sortTotalAsc'].forEach(btnId => {
         if (btnId === id) $(btnId).dataset.active = '1';
         else delete $(btnId).dataset.active;
       });
@@ -379,8 +406,8 @@
     }
 
     async function loadRows() {
-      const rows = await DB.alcoholLogInRange(currentRange.from, currentRange.to);
-      renderTable(currentRange.from, currentRange.to, rows);
+      lastRows = await DB.alcoholLogInRange(currentRange.from, currentRange.to);
+      renderTable(currentRange.from, currentRange.to, lastRows, currentSort);
     }
 
     $('refreshBtn').addEventListener('click', async () => {
@@ -388,6 +415,15 @@
       try { await loadRows(); }
       catch (e) { dataMsg('Refresh failed: ' + e.message, 'err'); }
       finally { $('refreshBtn').disabled = false; }
+    });
+
+    const SORT_BTNS = { sortDateDesc: 'date-desc', sortDateAsc: 'date-asc', sortTotalDesc: 'total-desc', sortTotalAsc: 'total-asc' };
+    Object.keys(SORT_BTNS).forEach(btnId => {
+      $(btnId).addEventListener('click', () => {
+        currentSort = SORT_BTNS[btnId];
+        setActiveSortBtn(btnId);
+        renderTable(currentRange.from, currentRange.to, lastRows, currentSort);
+      });
     });
 
     $('rangeLast50').addEventListener('click', async () => {
