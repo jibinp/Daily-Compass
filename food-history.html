@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>Health Log - Alcohol History — Daily Compass</title>
+  <title>Health Log - Food History — Daily Compass</title>
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" href="icons/icon-192.png" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
@@ -39,7 +39,7 @@
       align-items: center;
       padding-bottom: 48px;
     }
-    .wrap { width: 100%; max-width: 1000px; padding: 20px 20px 0; }
+    .wrap { width: 100%; max-width: 1300px; padding: 20px 20px 0; }
     .field {
       background: var(--card); border: 1px solid var(--border);
       border-radius: 14px; padding: 16px; margin-bottom: 14px;
@@ -107,6 +107,15 @@
     .tchildren { padding-left: 14px; }
     .tchildren.collapsed { display: none; }
     .tfolder.collapsed .tw { transform: rotate(-90deg); }
+    /* ---- item picker ---- */
+    .chip-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+    .chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: var(--field); border: 1px solid var(--border); border-radius: 999px;
+      padding: 6px 12px; font-size: 0.82rem; cursor: pointer; user-select: none;
+    }
+    .chip input { margin: 0; }
+    .chip.checked { border-color: var(--accent); color: var(--accent); }
     /* ---- data table ---- */
     .data-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
     .data-head h2 { margin: 0; font-size: 1rem; }
@@ -122,18 +131,15 @@
       background: var(--field); border: 1px solid var(--border); color: var(--text);
       border-radius: 8px; padding: 6px 8px; font-size: 0.82rem; color-scheme: dark;
     }
-    /* overflow-x alone would implicitly force overflow-y to 'auto' too (per
-       spec, 'visible' can't pair with a non-visible axis) — turning this
-       into its own scroll box. Made deliberate: bounded self-scrolling table
-       with a correctly-behaving sticky header. */
     .table-wrap { overflow: auto; max-height: 75vh; margin-top: 8px; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); white-space: nowrap; }
-    th { color: var(--muted); font-weight: 600; background: var(--card); position: sticky; top: 0; }
-    .total-val { border-bottom: 1px dotted var(--muted); cursor: help; font-weight: 600; color: var(--err); }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; table-layout: fixed; }
+    th, td { text-align: center; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+    td { white-space: nowrap; }
+    th { color: var(--muted); font-weight: 600; background: var(--card); position: sticky; top: 0; white-space: normal; word-break: break-word; }
+    .total-val { border-bottom: 1px dotted var(--muted); cursor: help; font-weight: 600; color: var(--accent); }
     .total-val.zero { color: var(--muted); font-weight: 400; border-bottom: none; cursor: default; }
-    /* No drinks logged AND the day was never marked "reviewed" on Data Entry
-       — genuinely unknown (forgot to log?), distinct from a confirmed zero. */
+    /* Not logged AND the day was never marked "reviewed" on Data Entry —
+       genuinely unknown (forgot to log?), distinct from a confirmed zero. */
     .total-val.unknown { color: var(--warn); font-weight: 400; border-bottom: none; cursor: help; }
     .msg { text-align: center; font-size: 0.9rem; margin: 12px 0; min-height: 1.2em; }
     .msg.ok { color: var(--ok); }
@@ -155,9 +161,9 @@
         <a class="tnode" href="health-log.html"><span class="tw-sp"></span>Data Entry</a>
         <a class="tnode" href="bmi-history.html"><span class="tw-sp"></span>⚖️ BMI/BMR History</a>
         <a class="tnode" href="time-history.html"><span class="tw-sp"></span>☀️ Time History</a>
-        <a class="tnode active" href="alcohol-history.html"><span class="tw-sp"></span>🍸 Alcohol History</a>
+        <a class="tnode" href="alcohol-history.html"><span class="tw-sp"></span>🍸 Alcohol History</a>
         <a class="tnode" href="supplement-history.html"><span class="tw-sp"></span>💊 Supplement History</a>
-        <a class="tnode" href="food-history.html"><span class="tw-sp"></span>🍎 Food History</a>
+        <a class="tnode active" href="food-history.html"><span class="tw-sp"></span>🍎 Food History</a>
       </div>
       <div class="tfolder tnode collapsed" data-group="g-temp"><span class="tw">▾</span>🗓️ Temporary</div>
       <div class="tchildren collapsed" id="g-temp">
@@ -182,7 +188,7 @@
 
   <div class="topbar">
     <button class="hamburger" id="navToggle" aria-label="Open menu">☰</button>
-    <span class="topbar-title">🍸 Alcohol History</span>
+    <span class="topbar-title">🍎 Food History</span>
     <button class="link-btn" id="logoutBtn">Log out</button>
   </div>
 
@@ -191,12 +197,15 @@
 
       <section class="field">
         <div class="data-head">
-          <h2>Standard drinks per day — every date</h2>
+          <h2>Food items taken per day</h2>
           <button class="link-btn" id="refreshBtn">↻ Refresh</button>
         </div>
-        <div class="metric-hint" style="color:var(--muted);font-size:0.82rem;margin-bottom:10px;">
-          1 standard drink = 1 shot of hard liquor, 1 serve of wine, or 1 can of beer. Dates with nothing logged show 0.
+        <div class="muted-note" style="margin-bottom:10px;">
+          Pick one or more food items below. Each column shows the quantity logged that day (blank/— if not logged).
         </div>
+        <div id="pickerMsg" class="msg"></div>
+        <div class="chip-row" id="itemPicker"></div>
+
         <div class="range-bar">
           <button class="mini-btn" id="rangeLast50" data-active="1">Last 50 days</button>
           <button class="mini-btn ghost" id="rangeAll">All data</button>
@@ -210,14 +219,12 @@
           <span class="muted-note">Sort:</span>
           <button class="mini-btn" id="sortDateDesc" data-active="1">Date ↓ newest</button>
           <button class="mini-btn ghost" id="sortDateAsc">Date ↑ oldest</button>
-          <button class="mini-btn ghost" id="sortTotalDesc">Total ↓ highest</button>
-          <button class="mini-btn ghost" id="sortTotalAsc">Total ↑ lowest</button>
         </div>
         <div class="msg" id="dataMsg"></div>
         <div class="table-wrap">
           <table id="dataTable">
             <thead>
-              <tr><th>Date</th><th>Hard Liquor</th><th>Wine</th><th>Beer</th><th>Total</th></tr>
+              <tr id="tableHeadRow"><th>Date</th></tr>
             </thead>
             <tbody id="dataBody"></tbody>
           </table>
@@ -251,15 +258,16 @@
         return new Set(data.map(r => r.log_date));
       },
       // from/to are inclusive log_date bounds; pass null for either to leave
-      // that side open. Paginated (see time-history.html) — Supabase caps
-      // unbounded queries at 1000 rows regardless of client .limit().
-      async alcoholLogInRange(fromDate, toDate) {
+      // that side open. A row existing in food_log IS "taken" (no separate
+      // taken/not-taken flag, unlike supplement_log). Paginated — Supabase
+      // caps unbounded queries at 1000 rows regardless of .limit().
+      async foodLogInRange(fromDate, toDate) {
         const PAGE = 1000;
         let all = [];
         let offset = 0;
         while (true) {
-          let q = supabase.from('alcohol_log')
-            .select('log_date, alcohol_item, shots')
+          let q = supabase.from('food_log')
+            .select('log_date, food_item, quantity')
             .order('log_date', { ascending: true })
             .range(offset, offset + PAGE - 1);
           if (fromDate) q = q.gte('log_date', fromDate);
@@ -272,22 +280,32 @@
         }
         return all;
       },
-      // earliest ever alcohol_log date, for "All data"'s lower bound
-      async earliestAlcoholDate() {
-        const { data, error } = await supabase.from('alcohol_log')
+      // earliest ever food_log date, for "All data"'s lower bound
+      async earliestFoodLogDate() {
+        const { data, error } = await supabase.from('food_log')
           .select('log_date').order('log_date', { ascending: true }).limit(1);
         if (error) throw error;
         return data.length ? data[0].log_date : null;
       },
-      // all items ever used (not just active ones — historical log rows
-      // can reference an item that's since been deactivated), for the
-      // name -> type lookup used to split totals into Hard Liquor/Wine/Beer.
-      async allAlcoholItemTypes() {
-        const { data, error } = await supabase.from('alcohol_items').select('name, type, abv_percent');
+      // every food item ever created (active or archived — historical log
+      // rows can reference an archived item).
+      async allFoodItemNames() {
+        const { data, error } = await supabase.from('food_items').select('name');
         if (error) throw error;
-        const map = {};
-        for (const r of data) map[r.name] = { type: r.type, abv: r.abv_percent };
-        return map;
+        return data.map(r => r.name);
+      },
+      // persisted item-picker selection (survives refresh) — single row,
+      // same singleton-settings pattern as user_profile.
+      async getSelectedItemPrefs() {
+        const { data, error } = await supabase.from('food_history_prefs')
+          .select('selected_items').eq('id', 1).maybeSingle();
+        if (error) throw error;
+        return data ? (data.selected_items || []) : [];
+      },
+      async saveSelectedItemPrefs(names) {
+        const { error } = await supabase.from('food_history_prefs')
+          .upsert({ id: 1, selected_items: names }, { onConflict: 'id' });
+        if (error) throw error;
       },
     };
 
@@ -295,14 +313,11 @@
     const pad = n => String(n).padStart(2, '0');
     // Local calendar date, NOT toISOString().slice(0,10) — that's UTC-based
     // and shifts the date backward for positive-UTC-offset zones (e.g. IST)
-    // whenever the local time is past UTC midnight, silently dropping
-    // "today" from the range. log_date everywhere else in this app is a
-    // local calendar date, so date math here has to match.
+    // whenever local time is past UTC midnight. log_date everywhere else in
+    // this app is a local calendar date, so date math here has to match.
     const isoDate = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-    const todayDate = () => {
-      const d = new Date();
-      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-    };
+    const todayDate = () => isoDate(new Date());
+    const round2 = n => Math.round(n * 100) / 100;
 
     // ---- side drawer nav ----
     const openNav  = () => { $('sidebar').classList.add('open'); $('navBackdrop').classList.add('open'); };
@@ -335,10 +350,12 @@
       const el = $('dataMsg'); el.textContent = text || '';
       el.className = 'msg' + (kind ? ' ' + kind : '');
     }
+    function pickerMsg(text, kind) {
+      const el = $('pickerMsg'); el.textContent = text || '';
+      el.className = 'msg' + (kind ? ' ' + kind : '');
+    }
 
-    // Every calendar date from `from` to `to` inclusive, newest first —
-    // unlike other history pages, dates with zero entries still get a row
-    // (0 drinks), not omitted.
+    // Every calendar date from `from` to `to` inclusive, newest first.
     function dateRangeDesc(from, to) {
       const out = [];
       const start = new Date(from + 'T00:00:00');
@@ -349,78 +366,160 @@
       return out;
     }
 
-    // name -> { type, abv } for every item ever logged, loaded once — see
-    // DB.allAlcoholItemTypes.
-    let itemTypes = {};
-    const typeOf = name => (itemTypes[name] && itemTypes[name].type) || 'Other';
-    const abvOf = name => itemTypes[name] && itemTypes[name].abv;
+    // ================================================================
+    // Item picker
+    // ================================================================
+    let itemNames = [];       // raw food_items.name list (active + archived)
+    let cachedOptions = [];   // {name}, sorted — computed once in indexItems()
+    let selectedNames = new Set();
 
-    function cell(count, tip, showUnknown) {
-      if (!count) {
-        return showUnknown
-          ? '<td><span class="total-val unknown" title="Not marked reviewed on Data Entry — may just be unlogged.">?</span></td>'
-          : '<td><span class="total-val zero">0</span></td>';
+    function indexItems() {
+      cachedOptions = itemNames.slice().sort((a, b) => a.localeCompare(b)).map(name => ({ name }));
+    }
+
+    function itemOptions() {
+      return cachedOptions;
+    }
+
+    function renderPicker() {
+      const opts = itemOptions();
+      const el = $('itemPicker');
+      if (!opts.length) {
+        el.innerHTML = '<span class="muted-note">No food items yet — add them in Item Catalog.</span>';
+        return;
       }
-      return `<td><span class="total-val" title="${tip.replace(/"/g, '&quot;')}">${count}</span></td>`;
+      el.innerHTML = opts.map((o, i) => {
+        const checked = selectedNames.has(o.name);
+        return `<label class="chip ${checked ? 'checked' : ''}">` +
+          `<input type="checkbox" data-idx="${i}" ${checked ? 'checked' : ''} />` +
+          `${o.name}</label>`;
+      }).join('');
+      el.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+        cb.addEventListener('change', () => {
+          const name = opts[Number(cb.dataset.idx)].name;
+          if (cb.checked) selectedNames.add(name);
+          else selectedNames.delete(name);
+          cb.closest('.chip').classList.toggle('checked', cb.checked);
+          renderTable();
+          persistSelection();
+        });
+      });
     }
 
-    function renderRow(dateStr, dayRows) {
-      const dateLabel = new Date(`${dateStr}T00:00`)
-        .toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
-      const byType = { 'Hard Liquor': [], 'Wine': [], 'Beer': [], 'Other': [] };
-      let total = 0;
-      for (const r of dayRows) {
-        const t = typeOf(r.alcohol_item);
-        (byType[t] || (byType[t] = [])).push(r);
-        total += r.shots || 0;
-      }
-      const sumOf = list => list.reduce((s, r) => s + (r.shots || 0), 0);
-      const abvTag = name => { const a = abvOf(name); return a != null ? ` (${a}% ABV)` : ''; };
-      const tipOf = list => list.map(r => `${r.alcohol_item}: ${r.shots}${abvTag(r.alcohol_item)}`).join('\n');
-      const totalTip = tipOf(dayRows);
-      // hasRows: any entry logged that day (even a 0-shot one) already
-      // confirms the day, independent of the Data Entry review checkbox.
-      // Applies uniformly to every column, including per-type — a day
-      // that's genuinely unreviewed shouldn't show a confident 0 anywhere.
-      const confirmed = reviewedDates.has(dateStr) || dayRows.length > 0;
-      return `<tr>
-        <td>${dateLabel}</td>
-        ${cell(sumOf(byType['Hard Liquor']), tipOf(byType['Hard Liquor']), !confirmed)}
-        ${cell(sumOf(byType['Wine']), tipOf(byType['Wine']), !confirmed)}
-        ${cell(sumOf(byType['Beer']), tipOf(byType['Beer']), !confirmed)}
-        ${cell(total, totalTip, !confirmed)}
-      </tr>`;
+    // Saves the current selection so it survives a refresh. Fire-and-forget
+    // (doesn't block the UI) — failure just means next reload falls back to
+    // empty, same as before this feature existed.
+    async function persistSelection() {
+      try { await DB.saveSelectedItemPrefs([...selectedNames]); }
+      catch (e) { pickerMsg('Could not save selection: ' + e.message, 'err'); }
     }
 
-    const totalOf = dayRows => dayRows.reduce((s, r) => s + (r.shots || 0), 0);
-
-    function renderTable(from, to, rows, sort) {
-      const body = $('dataBody');
-      const byDate = {};
-      for (const r of rows) (byDate[r.log_date] = byDate[r.log_date] || []).push(r);
-      let dates = dateRangeDesc(from, to);   // starts newest-first
-      if (!dates.length) { body.innerHTML = '<tr><td colspan="5">Nothing yet.</td></tr>'; return; }
-      if (sort === 'date-asc') dates = dates.slice().reverse();
-      else if (sort === 'total-desc') dates = dates.slice().sort((a, b) => totalOf(byDate[b] || []) - totalOf(byDate[a] || []));
-      else if (sort === 'total-asc') dates = dates.slice().sort((a, b) => totalOf(byDate[a] || []) - totalOf(byDate[b] || []));
-      body.innerHTML = dates.map(d => renderRow(d, byDate[d] || [])).join('');
-    }
-
-    // currentRange.from/to always resolved to concrete dates (never null) —
-    // every-date zero-fill needs real bounds to iterate over.
+    // ================================================================
+    // Table
+    // ================================================================
     let currentRange = { from: null, to: null };
     let currentSort = 'date-desc';
-    let lastRows = [];              // cached so changing sort doesn't need a refetch
+    let lastLogRows = [];           // cached food_log rows for currentRange
     let reviewedDates = new Set();  // dates marked "reviewed" on Data Entry, for currentRange
 
-    function setActiveQuickBtn(id) {
-      ['rangeLast50', 'rangeAll'].forEach(btnId => {
+    // confirmed = an explicit row exists for this item/day (even if its
+    // quantity is 0) OR the whole day was marked reviewed — either way, a
+    // zero amount here is a real "none", not "never checked".
+    function cellFor(amount, confirmed) {
+      if (!amount) {
+        return confirmed
+          ? '<td><span class="total-val zero">—</span></td>'
+          : '<td><span class="total-val unknown" title="Not marked reviewed on Data Entry — may just be unlogged.">?</span></td>';
+      }
+      return `<td><span class="total-val">${round2(amount)}</span></td>`;
+    }
+
+    // food_log's primary key is (log_date, food_item), so at most one
+    // matching row per item per day — no summing needed.
+    function itemAmount(dayLogRows, name) {
+      const log = dayLogRows.find(l => l.food_item === name);
+      return { amount: log ? (log.quantity ?? 1) : 0, hasRow: !!log };
+    }
+
+    function renderRow(dateStr, dayLogRows, selectedOpts) {
+      const dateLabel = new Date(`${dateStr}T00:00`)
+        .toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
+      const reviewed = reviewedDates.has(dateStr);
+      const cells = selectedOpts.map(opt => {
+        const { amount, hasRow } = itemAmount(dayLogRows, opt.name);
+        return cellFor(amount, hasRow || reviewed);
+      }).join('');
+      return `<tr><td>${dateLabel}</td>${cells}</tr>`;
+    }
+
+    function renderTable() {
+      const opts = itemOptions().filter(o => selectedNames.has(o.name));
+      $('tableHeadRow').innerHTML = '<th>Date</th>' + opts.map(o => `<th>${o.name}</th>`).join('');
+
+      const body = $('dataBody');
+      if (!opts.length) {
+        body.innerHTML = '<tr><td>Pick one or more food items above to see their totals per day.</td></tr>';
+        return;
+      }
+      if (!currentRange.from || !currentRange.to) {
+        body.innerHTML = `<tr><td colspan="${opts.length + 1}">Nothing yet.</td></tr>`;
+        return;
+      }
+      const byDate = {};
+      for (const r of lastLogRows) (byDate[r.log_date] = byDate[r.log_date] || []).push(r);
+      let dates = dateRangeDesc(currentRange.from, currentRange.to);
+      if (currentSort === 'date-asc') dates = dates.slice().reverse();
+      body.innerHTML = dates.map(d => renderRow(d, byDate[d] || [], opts)).join('');
+    }
+
+    // ================================================================
+    // Load / wiring
+    // ================================================================
+    async function loadItems() {
+      try {
+        itemNames = await DB.allFoodItemNames();
+        indexItems();
+        try {
+          const saved = await DB.getSelectedItemPrefs();
+          selectedNames = new Set(saved);
+        } catch { /* saved selection is a nice-to-have — page still works empty */ }
+        renderPicker();
+        pickerMsg('', '');
+      } catch (e) { pickerMsg('Could not load food items: ' + e.message, 'err'); }
+    }
+
+    async function loadLogRows() {
+      [lastLogRows, reviewedDates] = await Promise.all([
+        DB.foodLogInRange(currentRange.from, currentRange.to),
+        DB.dailyReviewInRange(currentRange.from, currentRange.to),
+      ]);
+      renderTable();
+    }
+
+    $('refreshBtn').addEventListener('click', async () => {
+      $('refreshBtn').disabled = true;
+      try { await loadLogRows(); }
+      catch (e) { dataMsg('Refresh failed: ' + e.message, 'err'); }
+      finally { $('refreshBtn').disabled = false; }
+    });
+
+    const SORT_BTNS = { sortDateDesc: 'date-desc', sortDateAsc: 'date-asc' };
+    function setActiveSortBtn(id) {
+      Object.keys(SORT_BTNS).forEach(btnId => {
         if (btnId === id) $(btnId).dataset.active = '1';
         else delete $(btnId).dataset.active;
       });
     }
-    function setActiveSortBtn(id) {
-      ['sortDateDesc', 'sortDateAsc', 'sortTotalDesc', 'sortTotalAsc'].forEach(btnId => {
+    Object.keys(SORT_BTNS).forEach(btnId => {
+      $(btnId).addEventListener('click', () => {
+        currentSort = SORT_BTNS[btnId];
+        setActiveSortBtn(btnId);
+        renderTable();
+      });
+    });
+
+    function setActiveQuickBtn(id) {
+      ['rangeLast50', 'rangeAll'].forEach(btnId => {
         if (btnId === id) $(btnId).dataset.active = '1';
         else delete $(btnId).dataset.active;
       });
@@ -431,46 +530,22 @@
       return { from: isoDate(from), to: isoDate(to) };
     }
 
-    async function loadRows() {
-      [lastRows, reviewedDates] = await Promise.all([
-        DB.alcoholLogInRange(currentRange.from, currentRange.to),
-        DB.dailyReviewInRange(currentRange.from, currentRange.to),
-      ]);
-      renderTable(currentRange.from, currentRange.to, lastRows, currentSort);
-    }
-
-    $('refreshBtn').addEventListener('click', async () => {
-      $('refreshBtn').disabled = true;
-      try { await loadRows(); }
-      catch (e) { dataMsg('Refresh failed: ' + e.message, 'err'); }
-      finally { $('refreshBtn').disabled = false; }
-    });
-
-    const SORT_BTNS = { sortDateDesc: 'date-desc', sortDateAsc: 'date-asc', sortTotalDesc: 'total-desc', sortTotalAsc: 'total-asc' };
-    Object.keys(SORT_BTNS).forEach(btnId => {
-      $(btnId).addEventListener('click', () => {
-        currentSort = SORT_BTNS[btnId];
-        setActiveSortBtn(btnId);
-        renderTable(currentRange.from, currentRange.to, lastRows, currentSort);
-      });
-    });
-
     $('rangeLast50').addEventListener('click', async () => {
       currentRange = last50Range();
       $('rangeFrom').value = currentRange.from;
       $('rangeTo').value = currentRange.to;
       setActiveQuickBtn('rangeLast50');
-      try { await loadRows(); } catch (e) { dataMsg('Could not load: ' + e.message, 'err'); }
+      try { await loadLogRows(); } catch (e) { dataMsg('Could not load: ' + e.message, 'err'); }
     });
     $('rangeAll').addEventListener('click', async () => {
       $('rangeAll').disabled = true;
       try {
-        const earliest = await DB.earliestAlcoholDate();
+        const earliest = await DB.earliestFoodLogDate();
         currentRange = { from: earliest || todayDate(), to: todayDate() };
         $('rangeFrom').value = currentRange.from;
         $('rangeTo').value = currentRange.to;
         setActiveQuickBtn('rangeAll');
-        await loadRows();
+        await loadLogRows();
       } catch (e) { dataMsg('Could not load: ' + e.message, 'err'); }
       finally { $('rangeAll').disabled = false; }
     });
@@ -478,7 +553,7 @@
       if (!$('rangeFrom').value || !$('rangeTo').value) { dataMsg('Pick both From and To.', 'err'); return; }
       currentRange = { from: $('rangeFrom').value, to: $('rangeTo').value };
       setActiveQuickBtn(null);
-      try { await loadRows(); } catch (e) { dataMsg('Could not load: ' + e.message, 'err'); }
+      try { await loadLogRows(); } catch (e) { dataMsg('Could not load: ' + e.message, 'err'); }
     });
 
     // ---- route: no session → sign in on the picker page ----
@@ -488,10 +563,8 @@
       currentRange = last50Range();
       $('rangeFrom').value = currentRange.from;
       $('rangeTo').value = currentRange.to;
-      try { itemTypes = await DB.allAlcoholItemTypes(); }
-      catch { /* type split is optional — counts just land in "Other" */ }
-      try { await loadRows(); }
-      catch (e) { dataMsg('Could not load: ' + e.message, 'err'); }
+      await loadItems();
+      try { await loadLogRows(); } catch (e) { dataMsg('Could not load: ' + e.message, 'err'); }
     }
 
     DB.onAuthChange(session => { if (session) showApp(); else showLogin(); });

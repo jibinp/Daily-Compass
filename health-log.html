@@ -53,6 +53,9 @@
       padding: 16px;
       margin-bottom: 14px;
     }
+    /* Tile isn't fully filled in for the selected date — at least one field
+       is missing (an explicit 0 counts as filled; blank doesn't). */
+    .field.tile-empty { border-color: var(--warn); box-shadow: 0 0 0 1px var(--warn); }
     .jump-tabs {
       position: sticky; top: var(--topbar-h, 0px); z-index: 40;
       display: flex; gap: 8px; overflow-x: auto; -webkit-overflow-scrolling: touch;
@@ -95,6 +98,9 @@
       font-size: 0.95rem;
       color-scheme: dark;
     }
+    /* Field is missing for the selected date (an explicit 0 counts as
+       filled; blank doesn't) — same border-color as .tile-empty. */
+    input.input-missing { border-color: var(--warn); box-shadow: 0 0 0 1px var(--warn); }
     input:focus { outline: none; border-color: var(--accent); }
     textarea {
       display: block; width: 100%; margin-bottom: 8px;
@@ -420,6 +426,8 @@
         <a class="tnode" href="bmi-history.html"><span class="tw-sp"></span>⚖️ BMI/BMR History</a>
         <a class="tnode" href="time-history.html"><span class="tw-sp"></span>☀️ Time History</a>
         <a class="tnode" href="alcohol-history.html"><span class="tw-sp"></span>🍸 Alcohol History</a>
+        <a class="tnode" href="supplement-history.html"><span class="tw-sp"></span>💊 Supplement History</a>
+        <a class="tnode" href="food-history.html"><span class="tw-sp"></span>🍎 Food History</a>
       </div>
       <div class="tfolder tnode collapsed" data-group="g-temp"><span class="tw">▾</span>🗓️ Temporary</div>
       <div class="tchildren collapsed" id="g-temp">
@@ -562,6 +570,7 @@
           <div class="field jump-target" id="sectionFood">
             <div class="field-head"><span class="icon">🍎</span><span class="label">Food Log</span></div>
             <div class="muted-note">Fill in whatever you had today. Saves with the topbar Save button.</div>
+            <button type="button" class="link-btn" id="foodZeroAllBtn">Set all to 0</button>
             <div id="foodItemsList"></div>
             <div class="muted-note">New food item? <a href="item-catalog.html#food" style="color:var(--accent);">Add it in Item Catalog</a>.</div>
           </div>
@@ -569,6 +578,7 @@
           <div class="field jump-target" id="sectionMeal">
             <div class="field-head"><span class="icon">🍽️</span><span class="label">Meal Log</span></div>
             <div class="muted-note">One entry per day. Saves with the topbar Save button.</div>
+            <button type="button" class="link-btn" id="mealZeroAllBtn">Set all to 0</button>
 
             <div class="macro-grid">
               <div><label class="muted-note" for="mealCalories">Calories</label><input type="number" step="any" id="mealCalories" placeholder="0" /></div>
@@ -609,6 +619,7 @@
           <div class="field jump-target" id="sectionMstbn">
             <div class="field-head"><span class="icon">📊</span><span class="label">Mstbn</span></div>
             <div class="muted-note">One entry per day. Saves with the topbar Save button.</div>
+            <button type="button" class="link-btn" id="dcZeroAllBtn">Set all to 0</button>
             <div class="macro-grid">
               <div><label class="muted-note" for="dcMstbn">Mstbn</label><input type="number" step="any" id="dcMstbn" placeholder="0" /></div>
               <div><label class="muted-note" for="dcFk">Fk</label><input type="number" step="any" id="dcFk" placeholder="0" /></div>
@@ -619,6 +630,7 @@
             </div>
 
             <label class="muted-note">Money</label>
+            <button type="button" class="link-btn" id="mnZeroAllBtn">Set all to 0</button>
             <div class="macro-grid">
               <div><label class="muted-note" for="mnMstbn">Mstbn</label><input type="number" step="any" id="mnMstbn" placeholder="0" /></div>
               <div><label class="muted-note" for="mnFk">Fk</label><input type="number" step="any" id="mnFk" placeholder="0" /></div>
@@ -654,6 +666,7 @@
           <div class="field jump-target" id="sectionAlcohol">
             <div class="field-head"><span class="icon">🍺</span><span class="label">Alcohol log</span></div>
             <div class="muted-note">Pick a drink. Tap +/− while drinking to log a shot instantly, or set an exact amount and Add later — both save immediately, using the date selected at top.</div>
+            <button type="button" class="link-btn" id="alcNoneTodayBtn">No drinks today</button>
 
             <select class="tz-select-sm" id="logAlcoholSelect" aria-label="Select drink"></select>
             <div class="log-add-row">
@@ -688,17 +701,16 @@
             </div>
           </div>
 
-          <div class="stats">
-            <div class="stat"><div class="stat-val" id="statDays">—</div><div class="stat-lbl">Days logged</div></div>
-            <div class="stat"><div class="stat-val" id="statEat">—</div><div class="stat-lbl">Avg eating window</div></div>
-            <div class="stat"><div class="stat-val" id="statSleep">—</div><div class="stat-lbl">Avg sleep</div></div>
-          </div>
 
           <div class="field">
             <div class="data-head">
               <div class="field-head"><span class="icon">📋</span><span class="label">Selected date</span></div>
               <button class="link-btn" id="refreshBtn">↻ Refresh</button>
             </div>
+            <label class="muted-note" style="display:flex; align-items:center; gap:8px; cursor:pointer; margin-bottom:8px;">
+              <input type="checkbox" id="dailyReviewChk" />
+              Reviewed today — nothing else to add (alcohol/food/supplements)
+            </label>
             <ul class="list" id="selectedDateList"></ul>
           </div>
         </section>
@@ -762,15 +774,6 @@
           .select('aspect, title, datetime')
           .order('datetime', { ascending: false })
           .limit(limit);
-        if (error) throw error;
-        return data;
-      },
-      async allEvents() {
-        const { data, error } = await supabase
-          .from('events')
-          .select('id, aspect, title, datetime, log_date, tz, reduction_min')
-          .order('log_date', { ascending: false })
-          .order('datetime', { ascending: true });
         if (error) throw error;
         return data;
       },
@@ -937,6 +940,24 @@
         }, { onConflict: 'id' });
         if (error) throw error;
       },
+      // ---- Daily review (explicit "nothing else to add" confirmation) ----
+      // Row existing IS the flag — see supabase/daily_review.sql.
+      async dailyReviewGet(logDate) {
+        const { data, error } = await supabase.from('daily_review')
+          .select('log_date').eq('log_date', logDate).maybeSingle();
+        if (error) throw error;
+        return !!data;
+      },
+      async dailyReviewSet(logDate, reviewed) {
+        if (reviewed) {
+          const { error } = await supabase.from('daily_review')
+            .upsert({ log_date: logDate }, { onConflict: 'log_date' });
+          if (error) throw error;
+        } else {
+          const { error } = await supabase.from('daily_review').delete().eq('log_date', logDate);
+          if (error) throw error;
+        }
+      },
       // ---- Food Log (manageable item list, float qty per day) ----
       async activeFoodItems() {
         const { data, error } = await supabase.from('food_items')
@@ -1026,6 +1047,9 @@
     // UI helpers
     // ================================================================
     const $ = id => document.getElementById(id);
+    // Toggles the "missing for this date" highlight on a single field —
+    // blank counts as missing, an explicit 0 (or anything else) doesn't.
+    const setMissing = (el, missing) => { if (el) el.classList.toggle('input-missing', missing); };
 
     // Errors don't show inline anymore (they cluttered/overlapped on mobile) —
     // logged here instead, read by developer.html. localStorage (not
@@ -1276,6 +1300,9 @@
     $('heightInput').addEventListener('input', updateBmiDisplay);
     $('waistInput').addEventListener('input', updateBmiDisplay);
     $('hipInput').addEventListener('input', updateBmiDisplay);
+    ['weightInput', 'heightInput', 'waistInput', 'hipInput'].forEach(id => {
+      $(id).addEventListener('input', () => setMissing($(id), $(id).value === ''));
+    });
 
     function profileFormMsg(text, kind) {
       const el = $('profileFormMsg'); el.textContent = text || '';
@@ -1387,9 +1414,46 @@
       el.querySelectorAll('.food-qty').forEach(input => {
         const loaded = loadedFood[input.dataset.food];
         input.value = loaded != null ? loaded : '';
-        input.addEventListener('input', updateDirtyIndicator);
+        input.classList.toggle('input-missing', loaded == null);
+        input.addEventListener('input', () => {
+          input.classList.toggle('input-missing', input.value === '');
+          updateDirtyIndicator();
+        });
       });
     }
+    async function loadDailyReview(logDate) {
+      if (!logDate) { $('dailyReviewChk').checked = false; return; }
+      try { $('dailyReviewChk').checked = await DB.dailyReviewGet(logDate); }
+      catch (e) { logDevError('Daily Review', 'Could not load: ' + e.message); }
+    }
+    // "No drinks today" doesn't write to alcohol_log (a day with nothing
+    // logged already means zero drinks) — it marks the day reviewed, the
+    // same daily_review flag the checkbox below controls, so Alcohol
+    // History can tell "confirmed zero" apart from "never checked".
+    $('alcNoneTodayBtn').addEventListener('click', async () => {
+      const logDate = $('topbarLogDate').value;
+      if (!logDate) { msg($('logAlcoholMsg'), 'Pick the log date at top.', 'err'); return; }
+      $('alcNoneTodayBtn').disabled = true;
+      try {
+        await DB.dailyReviewSet(logDate, true);
+        $('dailyReviewChk').checked = true;
+        msg($('logAlcoholMsg'), 'Marked reviewed — no drinks today.', 'ok');
+      } catch (e) {
+        msg($('logAlcoholMsg'), 'Could not save: ' + e.message, 'err');
+      } finally { $('alcNoneTodayBtn').disabled = false; }
+    });
+    $('dailyReviewChk').addEventListener('change', async () => {
+      const logDate = $('topbarLogDate').value;
+      if (!logDate) { $('dailyReviewChk').checked = false; return; }
+      const checked = $('dailyReviewChk').checked;
+      $('dailyReviewChk').disabled = true;
+      try { await DB.dailyReviewSet(logDate, checked); }
+      catch (e) {
+        $('dailyReviewChk').checked = !checked; // revert on failure
+        msg($('saveMsg'), 'Could not save review state: ' + e.message, 'err');
+      } finally { $('dailyReviewChk').disabled = false; }
+    });
+
     async function loadFoodLog(logDate) {
       loadedFood = {};
       if (!logDate) { renderFoodItemsList(); updateDirtyIndicator(); return; }
@@ -1447,8 +1511,21 @@
       }).join('');
     }
     MEAL_FIELDS.forEach(f => $('meal' + capitalize(f)).addEventListener('input', () => { renderMealCompare(); updateDirtyIndicator(); }));
+    MEAL_FIELDS.forEach(f => $('meal' + capitalize(f)).addEventListener('input', () => setMissing($('meal' + capitalize(f)), $('meal' + capitalize(f)).value === '')));
     $('mealEaten').addEventListener('input', updateDirtyIndicator);
     $('mealRemarks').addEventListener('input', updateDirtyIndicator);
+    $('mealZeroAllBtn').addEventListener('click', () => {
+      MEAL_FIELDS.forEach(f => {
+        $('meal' + capitalize(f)).value = '0';
+        $('meal' + capitalize(f)).dispatchEvent(new Event('input', { bubbles: true }));
+      });
+    });
+    $('foodZeroAllBtn').addEventListener('click', () => {
+      document.querySelectorAll('.food-qty').forEach(input => {
+        input.value = '0';
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+      });
+    });
 
     async function loadMealLog(logDate) {
       MEAL_FIELDS.forEach(f => { $('meal' + capitalize(f)).value = ''; });
@@ -1488,6 +1565,13 @@
       return v;
     }
     DC_FIELDS.forEach(f => $(f.id).addEventListener('input', updateDirtyIndicator));
+    DC_FIELDS.forEach(f => $(f.id).addEventListener('input', () => setMissing($(f.id), $(f.id).value === '')));
+    $('dcZeroAllBtn').addEventListener('click', () => {
+      DC_FIELDS.forEach(f => {
+        $(f.id).value = '0';
+        $(f.id).dispatchEvent(new Event('input', { bubbles: true }));
+      });
+    });
 
     async function loadDailyCounts(logDate) {
       DC_FIELDS.forEach(f => { $(f.id).value = ''; });
@@ -1525,7 +1609,14 @@
       return v;
     }
     MONEY_FIELDS.forEach(f => $(f.id).addEventListener('input', updateDirtyIndicator));
+    MONEY_FIELDS.forEach(f => $(f.id).addEventListener('input', () => setMissing($(f.id), $(f.id).value === '')));
     $('mnCurrency').addEventListener('input', updateDirtyIndicator);
+    $('mnZeroAllBtn').addEventListener('click', () => {
+      MONEY_FIELDS.forEach(f => {
+        $(f.id).value = '0';
+        $(f.id).dispatchEvent(new Event('input', { bubbles: true }));
+      });
+    });
 
     async function loadMoneyLog(logDate) {
       MONEY_FIELDS.forEach(f => { $(f.id).value = ''; });
@@ -1684,7 +1775,9 @@
         loadMealLog(value),
         loadDailyCounts(value),
         loadMoneyLog(value),
+        loadDailyReview(value),
       ]);
+      updateTileHighlights();
       if (restoreDraft(value)) {
         // renderFoodItemsList() is NOT called here — it rebuilds .food-qty
         // inputs from loadedFood and would immediately wipe the values
@@ -1810,6 +1903,45 @@
       $('logQty').value = qty;
       $('logTabletSelect').scrollIntoView({ behavior: 'smooth', block: 'center' });
       $('logQty').focus();
+    }
+
+    // Marks each tile/field for the selected date — a quick visual scan of
+    // what still needs filling in, independent of the "Reviewed" flag
+    // (that's a deliberate day-level confirmation; this is just "is there
+    // data here right now"). Tile-level border = "not fully filled in" (at
+    // least one field missing); per-input highlight pinpoints exactly which
+    // ones. An explicit 0 counts as filled — only blank counts as missing.
+    function updateTileHighlights() {
+      const setTile = (el, incomplete) => { if (el) el.classList.toggle('tile-empty', incomplete); };
+
+      setTile($('wakeup').closest('.field'), !loadedValues.wakeup);
+      setTile($('eat_start').closest('.field'), !loadedValues.eat_start);
+      setTile($('eat_end').closest('.field'), !loadedValues.eat_end);
+      setTile($('sleep').closest('.field'), !loadedValues.sleep);
+
+      setMissing($('weightInput'), loadedWeightKg == null);
+      setMissing($('heightInput'), loadedHeightCm == null);
+      setMissing($('waistInput'), loadedWaistCm == null);
+      setMissing($('hipInput'), loadedHipCm == null);
+      setTile($('sectionBmi'), [loadedWeightKg, loadedHeightCm, loadedWaistCm, loadedHipCm].some(v => v == null));
+
+      document.querySelectorAll('.food-qty').forEach(input => {
+        setMissing(input, loadedFood[input.dataset.food] == null);
+      });
+      setTile($('sectionFood'), foodItems.some(item => loadedFood[item.name] == null));
+
+      MEAL_FIELDS.forEach(f => setMissing($('meal' + capitalize(f)), loadedMeal[f] == null));
+      setTile($('sectionMeal'), MEAL_FIELDS.some(f => loadedMeal[f] == null));
+
+      DC_FIELDS.forEach(f => setMissing($(f.id), loadedCounts[f.key] == null));
+      MONEY_FIELDS.forEach(f => setMissing($(f.id), loadedMoney[f.key] == null));
+      setTile($('sectionMstbn'),
+        DC_FIELDS.some(f => loadedCounts[f.key] == null) || MONEY_FIELDS.some(f => loadedMoney[f.key] == null));
+
+      // Supplements/alcohol are add-what-you-took logs, not a fixed field
+      // set — "incomplete" doesn't apply, just "nothing logged at all".
+      setTile($('sectionSupp'), originalLog.size === 0);
+      setTile($('sectionAlcohol'), alcoholEntries.length === 0);
     }
 
     function renderSelectedDate() {
@@ -2482,7 +2614,6 @@
         lastDayRows = await DB.dayEvents(logDate).catch(() => []);
         await refreshFasting();
         await refreshSleepLast();
-        await loadStats();
         renderFoodItemsList();
         renderMealCompare();
         renderSelectedDate();
@@ -2505,46 +2636,6 @@
       const d = new Date(iso);
       return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
     };
-    async function loadStats() {
-      const rows = await DB.allEvents();
-      const days = {};
-      for (const r of rows) {
-        const k = r.log_date || dayKey(r.datetime);   // fallback for old rows
-        (days[k] = days[k] || {});
-        (days[k][r.aspect] = days[k][r.aspect] || []).push(r);
-      }
-      renderStats(days);
-    }
-
-    function renderStats(days) {
-      const keys = Object.keys(days);
-      $('statDays').textContent = keys.length || '—';
-      // pick first datetime of an aspect on a day (ignore dup extras)
-      const at = (d, aspect) => d[aspect] && d[aspect].length ? new Date(d[aspect][0].datetime) : null;
-      const reductionOf = (d, aspect) => d[aspect] && d[aspect].length ? (d[aspect][0].reduction_min || 0) : 0;
-      const avg = (durs) => durs.length
-        ? `${Math.floor(durs.reduce((a, b) => a + b, 0) / durs.length / 60)}h `
-          + `${Math.round(durs.reduce((a, b) => a + b, 0) / durs.length % 60)}m`
-        : '—';
-      const eatDurs = [], sleepDurs = [];
-      const sorted = keys.sort();
-      for (let i = 0; i < sorted.length; i++) {
-        const d = days[sorted[i]];
-        const es = at(d, 'eat_start'), ee = at(d, 'eat_end');
-        if (es && ee && ee > es) eatDurs.push((ee - es) / 60000);
-        // sleep length = this day's Sleep → next day's Wakeup, minus that wakeup's reduction
-        const sl = at(d, 'sleep');
-        const nextDay = i + 1 < sorted.length ? days[sorted[i + 1]] : null;
-        const nextWake = nextDay ? at(nextDay, 'wakeup') : null;
-        if (sl && nextWake && nextWake > sl) {
-          const dur = (nextWake - sl) / 60000 - reductionOf(nextDay, 'wakeup');
-          if (dur > 0) sleepDurs.push(dur);
-        }
-      }
-      $('statEat').textContent = avg(eatDurs);
-      $('statSleep').textContent = avg(sleepDurs);
-    }
-
     $('refreshBtn').addEventListener('click', async () => {
       $('refreshBtn').disabled = true;
       try {
@@ -2556,8 +2647,9 @@
         await loadMealLog($('topbarLogDate').value);
         await loadDailyCounts($('topbarLogDate').value);
         await loadMoneyLog($('topbarLogDate').value);
-        await loadStats();
+        await loadDailyReview($('topbarLogDate').value);
         await refreshSleepLast();
+        updateTileHighlights();
       }
       catch (e) { msg($('saveMsg'), 'Refresh failed: ' + e.message, 'err'); }
       finally { $('refreshBtn').disabled = false; }
@@ -2600,8 +2692,9 @@
       await loadMealLog($('topbarLogDate').value);
       await loadDailyCounts($('topbarLogDate').value);
       await loadMoneyLog($('topbarLogDate').value);
+      await loadDailyReview($('topbarLogDate').value);
       await refreshSleepLast();
-      await loadStats();
+      updateTileHighlights();
       if (restoreDraft($('topbarLogDate').value)) {
         // renderFoodItemsList() is NOT called here — see the same note in
         // goToDate().

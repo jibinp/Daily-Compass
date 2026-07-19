@@ -139,6 +139,9 @@
     th:first-child { z-index: 3; }
     .zone-tag { color: var(--muted); font-size: 0.72rem; }
     .no-data { color: var(--muted); font-style: italic; }
+    /* Field wasn't logged AND the day was never marked "reviewed" on Data
+       Entry — genuinely unknown, distinct from a confirmed "nothing here". */
+    .no-data.unknown { color: var(--warn); font-style: normal; }
     .calc-val { border-bottom: 1px dotted var(--muted); cursor: help; }
     .calc-val.pass { color: var(--ok); font-weight: 600; }
     .calc-val.fail { color: var(--err); font-weight: 600; }
@@ -204,6 +207,8 @@
         <a class="tnode" href="bmi-history.html"><span class="tw-sp"></span>⚖️ BMI/BMR History</a>
         <a class="tnode active" href="time-history.html"><span class="tw-sp"></span>☀️ Time History</a>
         <a class="tnode" href="alcohol-history.html"><span class="tw-sp"></span>🍸 Alcohol History</a>
+        <a class="tnode" href="supplement-history.html"><span class="tw-sp"></span>💊 Supplement History</a>
+        <a class="tnode" href="food-history.html"><span class="tw-sp"></span>🍎 Food History</a>
       </div>
       <div class="tfolder tnode collapsed" data-group="g-temp"><span class="tw">▾</span>🗓️ Temporary</div>
       <div class="tchildren collapsed" id="g-temp">
@@ -291,6 +296,17 @@
       onAuthChange(cb) { supabase.auth.onAuthStateChange((_e, s) => cb(s)); },
       async currentSession() { const { data } = await supabase.auth.getSession(); return data.session; },
       async signOut() { await supabase.auth.signOut(); },
+      // Dates explicitly marked "reviewed, nothing else to add" on Data
+      // Entry — lets a missing field tell "confirmed nothing to log" apart
+      // from "day was never reviewed". See supabase/daily_review.sql.
+      async dailyReviewInRange(fromDate, toDate) {
+        let q = supabase.from('daily_review').select('log_date');
+        if (fromDate) q = q.gte('log_date', fromDate);
+        if (toDate) q = q.lte('log_date', toDate);
+        const { data, error } = await q;
+        if (error) throw error;
+        return new Set(data.map(r => r.log_date));
+      },
       // from/to are inclusive log_date bounds ('YYYY-MM-DD'); pass null for
       // either to leave that side open. Supabase caps unbounded queries at
       // 1000 rows by default — with years of history that silently drops
@@ -455,6 +471,7 @@
     ];
 
     let allRows = [];
+    let reviewedDates = new Set();  // dates marked "reviewed" on Data Entry, for currentRange
     let editingId = null;
 
     function entryHtml(r) {
@@ -582,17 +599,23 @@
         (days[k][r.aspect] = days[k][r.aspect] || []).push(r);
       }
       let dupCount = 0;
-      const cell = list => {
-        if (!list || !list.length) return '<td class="no-data">No data available</td>';
+      const noDataCell = reviewed => reviewed
+        ? '<td class="no-data">No data available</td>'
+        : '<td class="no-data unknown" title="Not marked reviewed on Data Entry — may just be unlogged.">?</td>';
+      const noDataSpan = reviewed => reviewed
+        ? '<span class="no-data">No data available</span>'
+        : '<span class="no-data unknown" title="Not marked reviewed on Data Entry — may just be unlogged.">?</span>';
+      const cell = (list, reviewed) => {
+        if (!list || !list.length) return noDataCell(reviewed);
         const dup = list.length > 1;
         if (dup) dupCount++;
         return `<td class="${dup ? 'dupcell' : ''}">${dup ? '⚠ ' : ''}${list.map(entryHtml).join('')}</td>`;
       };
-      const derivedCell = (list, deriveFn) => {
-        if (!list || !list.length) return '<td class="no-data">No data available</td>';
+      const derivedCell = (list, deriveFn, reviewed) => {
+        if (!list || !list.length) return noDataCell(reviewed);
         return `<td>${list.map(r => {
           const val = deriveFn(r);
-          if (val == null) return '<span class="no-data">No data available</span>';
+          if (val == null) return noDataSpan(reviewed);
           if (typeof val === 'object') return `<span class="calc-val ${val.cls || ''}" title="${val.tip.replace(/"/g, '&quot;')}">${val.text}</span>`;
           return val;
         }).join('<br>')}</td>`;
@@ -601,11 +624,15 @@
         const d = days[k];
         const dateLabel = new Date(`${k}T00:00`)
           .toLocaleDateString(undefined, { weekday: 'long', month: 'short', day: 'numeric', year: 'numeric' });
+        // Unlike the other history pages, having SOME field populated for a
+        // day doesn't confirm any particular OTHER field was deliberately
+        // left empty — only the explicit Data Entry review checkbox does.
+        const reviewed = reviewedDates.has(k);
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${dateLabel}</td>` + FIELDS.map(f => cell(d[f.id])).join('')
-          + derivedCell(d.wakeup, reductionOf)
-          + derivedCell(d.eat_start, fastingWindowOf)
-          + derivedCell(d.wakeup, sleepDurationOf);
+        tr.innerHTML = `<td>${dateLabel}</td>` + FIELDS.map(f => cell(d[f.id], reviewed)).join('')
+          + derivedCell(d.wakeup, reductionOf, reviewed)
+          + derivedCell(d.eat_start, fastingWindowOf, reviewed)
+          + derivedCell(d.wakeup, sleepDurationOf, reviewed);
         body.appendChild(tr);
       }
       const note = $('dupNote');
@@ -674,7 +701,10 @@
     }
 
     async function loadRows() {
-      allRows = await DB.eventsInRange(currentRange.from, currentRange.to);
+      [allRows, reviewedDates] = await Promise.all([
+        DB.eventsInRange(currentRange.from, currentRange.to),
+        DB.dailyReviewInRange(currentRange.from, currentRange.to),
+      ]);
       renderDataTable();
     }
 
