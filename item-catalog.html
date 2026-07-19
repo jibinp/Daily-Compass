@@ -38,7 +38,7 @@
       align-items: center;
       padding-bottom: 48px;
     }
-    .wrap { width: 100%; max-width: 1000px; padding: 20px 20px 0; }
+    .wrap { width: 100%; max-width: 1300px; padding: 20px 20px 0; }
     .field {
       background: var(--card); border: 1px solid var(--border);
       border-radius: 14px; padding: 16px; margin-bottom: 14px;
@@ -156,7 +156,7 @@
     .supp-table tr.archived td { color: var(--muted); font-style: italic; }
     .supp-table td.actions { text-align: right; white-space: nowrap; }
     .supp-table td.actions .mini-btn { padding: 4px 8px; font-size: 0.75rem; }
-    .supp-table td.ing { white-space: normal; color: var(--muted); font-size: 0.82rem; max-width: 260px; }
+    .supp-table td.ing { white-space: normal; color: var(--muted); font-size: 0.82rem; max-width: 420px; }
     .ing-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
     .ing-row input { flex: 1; min-width: 0; }
     .ing-row input.ing-amount { flex: 0 0 60px; }
@@ -196,6 +196,8 @@
         <a class="tnode" href="bmi-history.html"><span class="tw-sp"></span>⚖️ BMI/BMR History</a>
         <a class="tnode" href="time-history.html"><span class="tw-sp"></span>☀️ Time History</a>
         <a class="tnode" href="alcohol-history.html"><span class="tw-sp"></span>🍸 Alcohol History</a>
+        <a class="tnode" href="supplement-history.html"><span class="tw-sp"></span>💊 Supplement History</a>
+        <a class="tnode" href="food-history.html"><span class="tw-sp"></span>🍎 Food History</a>
       </div>
       <div class="tfolder tnode collapsed" data-group="g-temp"><span class="tw">▾</span>🗓️ Temporary</div>
       <div class="tchildren collapsed" id="g-temp">
@@ -367,20 +369,15 @@
         }, { onConflict: 'name' });
         if (error) throw error;
       },
-      // True rename — name is the primary key, so this moves the row plus
-      // every historical reference (log, received) to the new name instead
-      // of archiving the old row and creating a fresh duplicate. Ingredients
-      // aren't migrated here: the old row's cascade-delete clears them, and
-      // the caller re-inserts current ones under the new name right after.
+      // True rename — name is the primary key, so this is a single atomic
+      // UPDATE; the FKs on supplement_log/supplement_received/
+      // supplement_ingredients are ON UPDATE CASCADE, so every historical
+      // reference moves to the new name automatically (see
+      // supabase/catalog_fk_cascade_rename.sql). The caller still re-inserts
+      // current ingredients under the new name right after.
       async supplementRename(oldName, newName, fields) {
-        const ins = await supabase.from('supplements').upsert({ name: newName, ...fields }, { onConflict: 'name' });
-        if (ins.error) throw ins.error;
-        const logUpd = await supabase.from('supplement_log').update({ supplement: newName }).eq('supplement', oldName);
-        if (logUpd.error) throw logUpd.error;
-        const recvUpd = await supabase.from('supplement_received').update({ supplement: newName }).eq('supplement', oldName);
-        if (recvUpd.error) throw recvUpd.error;
-        const del = await supabase.from('supplements').delete().eq('name', oldName);
-        if (del.error) throw del.error;
+        const { error } = await supabase.from('supplements').update({ name: newName, ...fields }).eq('name', oldName);
+        if (error) throw error;
       },
       async uploadTabletImage(file, tabletName) {
         const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
@@ -428,15 +425,10 @@
         }, { onConflict: 'name' });
         if (error) throw error;
       },
-      // Same rename-safety as supplements — alcohol_log.alcohol_item
-      // references alcohol_items(name) on delete cascade.
+      // Same atomic-rename-via-cascade approach as supplements.
       async alcoholItemRename(oldName, newName, fields) {
-        const ins = await supabase.from('alcohol_items').upsert({ name: newName, ...fields }, { onConflict: 'name' });
-        if (ins.error) throw ins.error;
-        const logUpd = await supabase.from('alcohol_log').update({ alcohol_item: newName }).eq('alcohol_item', oldName);
-        if (logUpd.error) throw logUpd.error;
-        const del = await supabase.from('alcohol_items').delete().eq('name', oldName);
-        if (del.error) throw del.error;
+        const { error } = await supabase.from('alcohol_items').update({ name: newName, ...fields }).eq('name', oldName);
+        if (error) throw error;
       },
       async alcoholItemSetActive(name, active) {
         const { error } = await supabase.from('alcohol_items').update({ active }).eq('name', name);
@@ -456,15 +448,10 @@
         }, { onConflict: 'name' });
         if (error) throw error;
       },
-      // Same rename-safety as supplements — food_log.food_item references
-      // food_items(name) on delete cascade.
+      // Same atomic-rename-via-cascade approach as supplements.
       async foodItemRename(oldName, newName, fields) {
-        const ins = await supabase.from('food_items').upsert({ name: newName, ...fields }, { onConflict: 'name' });
-        if (ins.error) throw ins.error;
-        const logUpd = await supabase.from('food_log').update({ food_item: newName }).eq('food_item', oldName);
-        if (logUpd.error) throw logUpd.error;
-        const del = await supabase.from('food_items').delete().eq('name', oldName);
-        if (del.error) throw del.error;
+        const { error } = await supabase.from('food_items').update({ name: newName, ...fields }).eq('name', oldName);
+        if (error) throw error;
       },
       async foodItemSetActive(name, active) {
         const { error } = await supabase.from('food_items').update({ active }).eq('name', name);
@@ -625,7 +612,7 @@
 
     function renderSuppTable() {
       const t = $('suppTable');
-      let html = '<thead><tr><th>Tablet</th><th>Serving</th><th>Ingredients</th><th>Notes</th><th>Status</th><th></th></tr></thead><tbody>';
+      let html = '<thead><tr><th>Tablet</th><th>Serving</th><th>Status</th><th></th><th>Ingredients</th><th>Notes</th></tr></thead><tbody>';
       if (!supplements.length) {
         html += '<tr><td colspan="6" class="muted-note">No tablets yet — add one above.</td></tr>';
       }
@@ -642,12 +629,13 @@
           ? `<img src="${s.image_url}" class="tablet-thumb-sm" alt="" />`
           : '<span class="tablet-thumb-sm placeholder">💊</span>';
         html += `<tr class="${s.active ? '' : 'archived'}">
-          <td>${thumb}${s.name}</td><td>${s.dose || '—'}</td><td class="ing">${ingText}</td><td>${s.notes || '—'}</td>
+          <td>${thumb}${s.name}</td><td>${s.dose || '—'}</td>
           <td>${s.active ? 'Active' : 'Archived'}</td>
           <td class="actions">
             <button class="mini-btn ghost" data-edit="${s.name}">Edit</button>
             <button class="mini-btn ${s.active ? 'danger' : ''}" data-toggle="${s.name}">${s.active ? 'Archive' : 'Restore'}</button>
           </td>
+          <td class="ing">${ingText}</td><td class="ing">${s.notes || '—'}</td>
         </tr>`;
       }
       html += '</tbody>';
